@@ -30,6 +30,12 @@ export interface AnimeGroup {
  * 地点上的 bangumiId 不动，anitabi 链接仍指向各自的条目。
  */
 const WORK_BY_BANGUMI: Record<number, { key: string; name: string }> = {
+  290: { key: "fate-stay-night", name: "Fate/stay night 系列" },
+  935: { key: "fate-stay-night", name: "Fate/stay night 系列" },
+  95225: { key: "fate-stay-night", name: "Fate/stay night 系列" },
+  109386: { key: "fate-stay-night", name: "Fate/stay night 系列" },
+  109375: { key: "fate-stay-night", name: "Fate/stay night 系列" },
+  175600: { key: "fate-stay-night", name: "Fate/stay night 系列" },
   474906: { key: "shoushimin", name: "小市民系列" },
   513018: { key: "shoushimin", name: "小市民系列" },
   485: { key: "haruhi", name: "凉宫春日系列" },

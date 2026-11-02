@@ -11,6 +11,8 @@ export interface Spot {
   animeName: string;
   /** 地点名 */
   pointName: string;
+  /** 浮窗里的补充说明，可选 */
+  note?: string;
   /** 纬度（WGS84） */
   lat: number;
   /** 经度（WGS84） */
