@@ -1,0 +1,5 @@
+来源：Natural Earth 1:10m Cultural Vectors（Admin 0 — Countries），Japan 要素。版本 5.1.1。
+https://www.naturalearthdata.com/
+许可：公有领域（public domain）。
+
+处理：陆地多边形向外缓冲 12 海里，再用 6000 米容差简化。遮罩外环在代码里按地图 maxBounds 各边外扩 3 度。

@@ -2,14 +2,34 @@ import {
   setWorkerUrl,
   type ExpressionSpecification,
   type FilterSpecification,
+  type GeoJSONSourceSpecification,
   type Map,
 } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+import japanArea from "../data/japan-mask.json";
 
 /** OpenFreeMap 官方 Liberty 样式。无 key。可用 VITE_MAP_STYLE_URL 覆盖。 */
 export const DEFAULT_MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 
 export const MAP_STYLE_URL = import.meta.env.VITE_MAP_STYLE_URL?.trim() || DEFAULT_MAP_STYLE_URL;
+
+/** 西南、东北。可视范围限制在日本周边。 */
+export const MAP_MAX_BOUNDS: [[number, number], [number, number]] = [
+  [122.5, 23.5],
+  [150, 46.5],
+];
+
+export const MAP_MIN_ZOOM = 5;
+
+/** 遮罩外环比 maxBounds 各边再外扩的度数。 */
+const MASK_PAD_DEGREES = 3;
+
+const MASK_SOURCE_ID = "outside-japan";
+const MASK_LAYER_ID = "outside-japan-mask";
+/** Liberty 样式里 water 填充的颜色。读不到样式时用它。 */
+const SEA_COLOR = "#9ebdff";
+
+const COUNTRY_LABEL_LAYER_IDS = new Set(["label_country_1", "label_country_2", "label_country_3"]);
 
 /**
  * 地名优先用中日文，而不是英文或罗马字。
@@ -63,11 +83,58 @@ function basemapSourceLayer(layer: { id: string }): string | undefined {
   return typeof sourceLayer === "string" ? sourceLayer : undefined;
 }
 
+type BasemapLayer = { id: string; type?: string; filter?: unknown };
+
+function isAdminLevelGet(node: unknown): boolean {
+  return Array.isArray(node) && node[0] === "get" && node[1] === "admin_level";
+}
+
+function someExpr(node: unknown, visit: (expr: unknown[]) => boolean): boolean {
+  if (!Array.isArray(node)) return false;
+  if (visit(node)) return true;
+  return node.some((child) => someExpr(child, visit));
+}
+
+function selectsAdminLevel2(filter: unknown): boolean {
+  return someExpr(filter, (expr) => {
+    if (expr[0] !== "==") return false;
+    const left = expr[1];
+    const right = expr[2];
+    return (
+      (isAdminLevelGet(left) && (right === 2 || right === "2")) ||
+      (isAdminLevelGet(right) && (left === 2 || left === "2"))
+    );
+  });
+}
+
+/** admin_level 大于等于 3，省、县这一级。 */
+function isSubnationalBoundary(filter: unknown): boolean {
+  return someExpr(filter, (expr) => {
+    if (expr[0] !== ">=" && expr[0] !== ">") return false;
+    if (!isAdminLevelGet(expr[1]) || typeof expr[2] !== "number") return false;
+    return expr[0] === ">=" ? expr[2] >= 3 : expr[2] >= 2;
+  });
+}
+
+function isCountryLabelLayer(layer: BasemapLayer): boolean {
+  if (COUNTRY_LABEL_LAYER_IDS.has(layer.id)) return true;
+  return layer.type === "symbol" && layer.id.toLowerCase().includes("country");
+}
+
+/** 国界整层关掉。省、县界保留。 */
+function isCountryBoundaryLayer(layer: BasemapLayer): boolean {
+  const id = layer.id.toLowerCase();
+  if (!id.includes("boundary")) return false;
+  if (id === "boundary_2" || selectsAdminLevel2(layer.filter)) return true;
+  return !isSubnationalBoundary(layer.filter);
+}
+
 /** 这个符号层是否该从底图上拿掉。 */
-export function shouldHideBasemapLayer(layer: { id: string }): boolean {
+export function shouldHideBasemapLayer(layer: BasemapLayer): boolean {
   const id = layer.id;
   if (QUIET_BASEMAP_LAYER_SET.has(id)) return true;
   if (id.toLowerCase().includes("shield")) return true;
+  if (isCountryLabelLayer(layer) || isCountryBoundaryLayer(layer)) return true;
   const sourceLayer = basemapSourceLayer(layer);
   return sourceLayer === "housenumber" || id.toLowerCase().includes("housenumber");
 }
@@ -102,6 +169,48 @@ export function ensureMapWorker() {
   if (workerReady) return;
   setWorkerUrl(workerUrl);
   workerReady = true;
+}
+
+type Ring = [number, number][];
+
+function outsideJapanMask(): GeoJSONSourceSpecification["data"] {
+  const [[west, south], [east, north]] = MAP_MAX_BOUNDS;
+  const pad = MASK_PAD_DEGREES;
+  const outer: Ring = [
+    [west - pad, south - pad],
+    [east + pad, south - pad],
+    [east + pad, north + pad],
+    [west - pad, north + pad],
+    [west - pad, south - pad],
+  ];
+  // 数据里的环是逆时针，挖洞需要相反方向。
+  const holes = japanArea.coordinates.map((polygon) => [...polygon[0]].reverse() as Ring);
+  return {
+    type: "Feature",
+    properties: {},
+    geometry: { type: "Polygon", coordinates: [outer, ...holes] },
+  };
+}
+
+function seaColor(map: Map): string {
+  if (!map.getLayer("water")) return SEA_COLOR;
+  const color = map.getPaintProperty("water", "fill-color");
+  return typeof color === "string" ? color : SEA_COLOR;
+}
+
+/**
+ * 日本范围以外铺一层与海面同色的不透明填充，盖住底图。
+ * 图钉和浮窗是 HTML 覆盖层，仍画在它上面。几何来源见 japan-mask-source.txt。
+ */
+export function coverOutsideJapan(map: Map) {
+  if (map.getLayer(MASK_LAYER_ID)) return;
+  map.addSource(MASK_SOURCE_ID, { type: "geojson", data: outsideJapanMask() });
+  map.addLayer({
+    id: MASK_LAYER_ID,
+    type: "fill",
+    source: MASK_SOURCE_ID,
+    paint: { "fill-color": seaColor(map), "fill-opacity": 1, "fill-antialias": false },
+  });
 }
 
 export function preferCjkLabels(map: Map) {

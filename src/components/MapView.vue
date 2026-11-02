@@ -3,7 +3,15 @@ import { LngLatBounds, Map as MlMap, Marker, NavigationControl, Popup } from "ma
 import { createApp, onBeforeUnmount, onMounted, ref, shallowRef, type App } from "vue";
 import { clusterByDistance, THUMB_GAP, THUMB_H, THUMB_W, type ScreenPoint } from "../lib/cluster";
 import { imagePlan, prefetchImage } from "../lib/images";
-import { MAP_STYLE_URL, ensureMapWorker, preferCjkLabels, simplifyBasemap } from "../lib/map";
+import {
+  MAP_MAX_BOUNDS,
+  MAP_MIN_ZOOM,
+  MAP_STYLE_URL,
+  coverOutsideJapan,
+  ensureMapWorker,
+  preferCjkLabels,
+  simplifyBasemap,
+} from "../lib/map";
 import { PhotoCreditControl } from "../lib/photo-credit-control";
 import { groupByAnime, spots } from "../lib/spots";
 import type { Spot } from "../types/spot";
@@ -566,6 +574,8 @@ onMounted(() => {
     style: MAP_STYLE_URL,
     center: [135.78, 34.95],
     zoom: 5,
+    minZoom: MAP_MIN_ZOOM,
+    maxBounds: MAP_MAX_BOUNDS,
   });
   map.value = m;
   m.addControl(new NavigationControl(), "bottom-right");
@@ -573,6 +583,7 @@ onMounted(() => {
   m.on("style.load", () => {
     simplifyBasemap(m);
     preferCjkLabels(m);
+    coverOutsideJapan(m);
   });
   m.on("resize", () => {
     if (popup) {
