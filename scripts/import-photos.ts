@@ -12,7 +12,7 @@
  */
 import { readdir, writeFile, mkdir } from "node:fs/promises";
 import { basename, extname, join, resolve, dirname } from "node:path";
-import exifr from "exifr";
+import { readPhotoCapture } from "./lib/exif.ts";
 import type { PendingPhoto, Spot } from "../src/types/spot.ts";
 
 const args = process.argv.slice(2);
@@ -37,41 +37,23 @@ const bangumiId = bangumiRaw ? Number(bangumiRaw) : null;
 const EXT = new Set([".jpg", ".jpeg", ".heic", ".heif", ".png", ".tif", ".tiff", ".webp", ".avif"]);
 const files = (await readdir(dir)).filter((f) => EXT.has(extname(f).toLowerCase())).sort();
 
-/**
- * EXIF 的 DateTimeOriginal 是"拍摄地本地时间"且不带时区（"2026:05:03 14:20:00"）。
- * 有 OffsetTimeOriginal 时拼成带偏移的 ISO；没有就输出不带时区的本地时间，避免被脚本所在机器的时区改写。
- */
-const toISO = (raw: unknown, offset: unknown): string | null => {
-  if (typeof raw !== "string") return null;
-  const m = raw.match(/^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
-  if (!m) return null;
-  const local = `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`;
-  return typeof offset === "string" && /^[+-]\d{2}:\d{2}$/.test(offset) ? local + offset : local;
-};
-
 const spots: Spot[] = [];
 const pending: PendingPhoto[] = [];
 
 for (const file of files) {
   const full = join(dir, file);
-  let gps: { latitude?: number; longitude?: number } | undefined;
-  let meta: Record<string, unknown> | undefined;
+  let lat: number | null = null;
+  let lng: number | null = null;
+  let takenAt: string | null = null;
   try {
-    gps = await exifr.gps(full);
-    meta = await exifr.parse(full, {
-      pick: ["DateTimeOriginal", "CreateDate", "OffsetTimeOriginal", "OffsetTime"],
-      reviveValues: false,
-    });
+    const capture = await readPhotoCapture(full);
+    lat = capture.lat;
+    lng = capture.lng;
+    takenAt = capture.takenAt;
   } catch (e) {
     console.warn(`跳过 ${file}：${(e as Error).message}`);
   }
-  const takenAt = toISO(
-    meta?.DateTimeOriginal ?? meta?.CreateDate,
-    meta?.OffsetTimeOriginal ?? meta?.OffsetTime,
-  );
   const photo = `${photoBase}${encodeURIComponent(file)}`;
-  const lat = gps?.latitude;
-  const lng = gps?.longitude;
 
   if (typeof lat === "number" && typeof lng === "number" && !(lat === 0 && lng === 0)) {
     spots.push({

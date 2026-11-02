@@ -31,3 +31,6 @@ dist-ssr
 # 原图（含 EXIF/GPS）不进仓库
 photos/*
 !photos/.gitkeep
+
+# 缩图输出，准备拷进 blog-image，不进这个仓库
+dist-photos/

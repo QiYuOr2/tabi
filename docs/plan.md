@@ -102,7 +102,9 @@ interface Spot {
 ## 6. 图片
 
 - 原图放 `photos/`（已在 `.gitignore` 里忽略，原图带 GPS，不进仓库）。
-- 线上图片存放：`blog-image` 图床或 Vercel Blob，待定。上传前要缩图并**去掉 EXIF**（GPS 已经提取进 spots.json，没必要再公开原始元数据）。
+- 线上实拍放 `QiYuOr2/blog-image` 的 `tabi/<bangumiId>/`。上传前用 `pnpm photos:process` 缩图并去掉 EXIF。GPS 和拍摄时间在缩图前读出，写到 `dist-photos/capture.json`，避免转正、去元数据之后 import 丢数据。
+- 大图最长边 1280、JPEG 质量 82；缩略图从大图再缩，最长边 320、质量 78。都不放大，渐进式，mozjpeg，sRGB，不保留元数据。输出布局是 `dist-photos/<bangumiId>/<name>.jpg` 和 `dist-photos/<bangumiId>/thumb/<name>.jpg`。`name` 用 anitabi 地标 id，还没有就用 spot id。用法见 README。
+- 上传到 blog-image 仍是手动拷贝，脚本不推远程。
 
 ## 7. 部署（都要先确认，这次没做）
 
@@ -114,7 +116,8 @@ interface Spot {
 
 - [x] 底图不用 Mapbox，改为 MapLibre + OpenFreeMap
 - [ ] 手动标注页（拖图钉、确认 anitabi 候选）
-- [ ] 图片缩图 + 去 EXIF + 上传脚本
+- [x] 图片缩图 + 去 EXIF（`pnpm photos:process`）
+- [ ] 把 `dist-photos/` 拷进 blog-image 并推上去
 - [ ] 作品多了以后做聚合（cluster）
 - [ ] 部署到 Vercel，并绑定 `tabi.qiyuor2.me`
 - [ ] 若公共瓦片不够稳，再评估日本范围 PMTiles（z14 约 1.7GB，Cloudflare R2）
