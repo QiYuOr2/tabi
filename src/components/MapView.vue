@@ -16,9 +16,9 @@ const hidden = ref(new Set<string>());
 const groups = groupByAnime(spots);
 const colorOf = (s: Spot) => groups.find((g) => g.spots.includes(s))?.color ?? "#555";
 
-/** 小于这个经纬跨度就当成同一地点，点击直接开弹层。大约十几米。 */
+/** 没有 anitabi 地标的实拍，小于这个经纬跨度才算同一地点。大约十几米。 */
 const SAME_SPOT = 0.00008;
-/** 放到这一级仍叠在一起，就不再放大，直接开弹层。 */
+/** 放到这一级仍叠在一起，不同场景就在画面上散开，不再合成一个图钉。 */
 const CLUSTER_MAX_ZOOM = 17;
 
 interface Pin {
@@ -26,6 +26,9 @@ interface Pin {
   spot: Spot;
   button: HTMLButtonElement;
   badge: HTMLSpanElement;
+  marker: Marker;
+  /** 相对真实坐标的屏幕偏移。散开时非 0，地理坐标不变。 */
+  offset: { x: number; y: number };
 }
 
 const pins: Pin[] = [];
@@ -110,34 +113,92 @@ function schedulePan(m: MlMap, p: Popup) {
   requestAnimationFrame(() => requestAnimationFrame(run));
 }
 
-/** 图例里仍显示、且彼此落在同一地点阈值内的记录。按 id 稳定排序。 */
-function samePlaceSpots(spot: Spot): Spot[] {
-  const visible = pins.filter((pin) => !hidden.value.has(pin.group)).map((pin) => pin.spot);
-  const parent = visible.map((_, i) => i);
-  const find = (i: number): number => {
-    let p = i;
-    while (parent[p] !== p) p = parent[p]!;
-    return p;
-  };
-  const near = (a: Spot, b: Spot) =>
-    Math.max(Math.abs(a.lat - b.lat), Math.abs(a.lng - b.lng)) < SAME_SPOT;
-  for (let i = 0; i < visible.length; i++) {
-    for (let j = i + 1; j < visible.length; j++) {
-      if (!near(visible[i]!, visible[j]!)) continue;
-      const pa = find(i);
-      const pb = find(j);
-      if (pa !== pb) parent[pa] = pb;
-    }
+function bySpotId(a: Pin, b: Pin) {
+  return a.spot.id < b.spot.id ? -1 : 1;
+}
+
+/**
+ * 同一个动画场景分成一组。
+ * 有 anitabiPointId 的只和相同 pointId 合并；没有的按 SAME_SPOT 互相合并。
+ * 有 pointId 的不和没有的并在一起。
+ */
+function sceneGroups(list: Pin[]): Pin[][] {
+  const byPoint = new Map<string, Pin[]>();
+  const bare: Pin[] = [];
+  for (const pin of list) {
+    const pointId = pin.spot.anitabiPointId;
+    if (pointId) {
+      const key = `${pin.spot.bangumiId ?? ""}:${pointId}`;
+      const bucket = byPoint.get(key);
+      if (bucket) bucket.push(pin);
+      else byPoint.set(key, [pin]);
+    } else bare.push(pin);
   }
-  const idx = visible.findIndex((item) => item.id === spot.id);
-  if (idx < 0) return [spot];
-  const root = find(idx);
-  return visible.filter((_, i) => find(i) === root).sort((a, b) => (a.id < b.id ? -1 : 1));
+  const groups = [...byPoint.values()];
+  if (bare.length > 0) {
+    const parent = bare.map((_, i) => i);
+    const find = (i: number): number => {
+      let p = i;
+      while (parent[p] !== p) p = parent[p]!;
+      return p;
+    };
+    const near = (a: Spot, b: Spot) =>
+      Math.max(Math.abs(a.lat - b.lat), Math.abs(a.lng - b.lng)) < SAME_SPOT;
+    for (let i = 0; i < bare.length; i++) {
+      for (let j = i + 1; j < bare.length; j++) {
+        if (!near(bare[i]!.spot, bare[j]!.spot)) continue;
+        const pa = find(i);
+        const pb = find(j);
+        if (pa !== pb) parent[pa] = pb;
+      }
+    }
+    const buckets = new Map<number, Pin[]>();
+    for (let i = 0; i < bare.length; i++) {
+      const root = find(i);
+      const bucket = buckets.get(root);
+      if (bucket) bucket.push(bare[i]!);
+      else buckets.set(root, [bare[i]!]);
+    }
+    groups.push(...buckets.values());
+  }
+  for (const group of groups) group.sort(bySpotId);
+  groups.sort((a, b) => bySpotId(a[0]!, b[0]!));
+  return groups;
+}
+
+function scenePages(spot: Spot): Spot[] {
+  const visible = pins.filter((pin) => !hidden.value.has(pin.group));
+  const found = sceneGroups(visible).find((group) => group.some((pin) => pin.spot.id === spot.id));
+  const pages = (found ?? []).map((pin) => pin.spot);
+  if (!pages.some((page) => page.id === spot.id)) return [spot];
+  return pages;
+}
+
+/** 锚点之间至少隔开一个图钉加缝，斜向放置时也不会叠住。 */
+function ringOffsets(count: number) {
+  if (count <= 1) return [{ x: 0, y: 0 }];
+  const minDist = THUMB_W + THUMB_GAP + 12;
+  const radius = count === 2 ? minDist / 2 : minDist / (2 * Math.sin(Math.PI / count));
+  const offsets = [];
+  for (let i = 0; i < count; i++) {
+    const angle = -Math.PI / 2 + (2 * Math.PI * i) / count;
+    offsets.push({
+      x: Math.round(Math.cos(angle) * radius),
+      y: Math.round(Math.sin(angle) * radius),
+    });
+  }
+  return offsets;
+}
+
+function placePin(pin: Pin, x: number, y: number) {
+  if (pin.offset.x === x && pin.offset.y === y) return;
+  pin.offset = { x, y };
+  pin.marker.setOffset([x, y]);
 }
 
 function openPopup(m: MlMap, spot: Spot) {
   closePopup();
-  const pages = samePlaceSpots(spot);
+  const pages = scenePages(spot);
   const start = Math.max(
     0,
     pages.findIndex((page) => page.id === spot.id),
@@ -155,11 +216,12 @@ function openPopup(m: MlMap, spot: Spot) {
   });
   popupApp.mount(host);
 
+  const shift = pins.find((pin) => pin.spot.id === spot.id)?.offset ?? { x: 0, y: 0 };
   const next = new Popup({
     closeButton: false,
     closeOnClick: false,
     anchor: "bottom",
-    offset: THUMB_H + 8,
+    offset: [shift.x, shift.y - (THUMB_H + 8)],
     maxWidth: popupMaxWidth(m),
     className: "spot-popup",
     focusAfterOpen: false,
@@ -241,31 +303,85 @@ function layoutPins() {
       continue;
     }
 
-    onScreen.sort((a, b) => (a.item.spot.id < b.item.spot.id ? -1 : 1));
-    const rep = onScreen[0]!.item;
-    for (const pin of items) setShown(pin, pin === rep);
+    onScreen.sort((a, b) => bySpotId(a.item, b.item));
+    const scenes = sceneGroups(items);
+    const present = scenes.filter((scene) =>
+      scene.some((pin) => onScreen.some((point) => point.item === pin)),
+    );
+    const fan = present.length > 1 && m.getZoom() >= CLUSTER_MAX_ZOOM - 1e-6;
+    if (!fan) {
+      const rep = onScreen[0]!.item;
+      for (const pin of items) {
+        setShown(pin, pin === rep);
+        placePin(pin, 0, 0);
+      }
+      const count = items.length;
+      const oneScene = scenes.length <= 1;
+      if (count > 1) {
+        rep.badge.hidden = false;
+        rep.badge.textContent = String(count);
+        const label = oneScene
+          ? `${rep.spot.animeName} · ${count} 张照片`
+          : `${rep.spot.animeName} · ${count} 个地点`;
+        rep.button.title = label;
+        rep.button.setAttribute("aria-label", `${label}，${oneScene ? "点击查看" : "点击放大"}`);
+      } else {
+        rep.badge.hidden = true;
+        rep.badge.textContent = "";
+        const label = `${rep.spot.animeName} · ${rep.spot.pointName}`;
+        rep.button.title = label;
+        rep.button.setAttribute("aria-label", label);
+      }
+      const img = rep.button.querySelector("img");
+      if (!img || img.classList.contains("is-ready")) {
+        for (const page of scenePages(rep.spot)) warmPopup(page);
+      }
+      continue;
+    }
 
-    const count = items.length;
-    const samePlace = spreadOf(items) < SAME_SPOT;
-    if (count > 1) {
-      rep.badge.hidden = false;
-      rep.badge.textContent = String(count);
-      const label = samePlace
-        ? `${rep.spot.animeName} · ${count} 张照片`
-        : `${rep.spot.animeName} · ${count} 个地点`;
-      rep.button.title = label;
-      rep.button.setAttribute("aria-label", `${label}，${samePlace ? "点击查看" : "点击放大"}`);
-    } else {
-      rep.badge.hidden = true;
-      rep.badge.textContent = "";
-      const label = `${rep.spot.animeName} · ${rep.spot.pointName}`;
-      rep.button.title = label;
-      rep.button.setAttribute("aria-label", label);
+    // 不同场景叠在同一像素上时，绕真实坐标散开，每组一个可点的图钉。
+    let cx = 0;
+    let cy = 0;
+    for (const point of onScreen) {
+      cx += point.x;
+      cy += point.y + THUMB_H / 2;
     }
-    const img = rep.button.querySelector("img");
-    if (!img || img.classList.contains("is-ready")) {
-      for (const page of samePlaceSpots(rep.spot)) warmPopup(page);
-    }
+    cx /= onScreen.length;
+    cy /= onScreen.length;
+    const offsets = ringOffsets(present.length);
+    const shown = new Set<Pin>();
+    present.forEach((scene, index) => {
+      const rep = scene.find((pin) => onScreen.some((point) => point.item === pin))!;
+      shown.add(rep);
+      const at = onScreen.find((point) => point.item === rep)!;
+      const anchorX = at.x;
+      const anchorY = at.y + THUMB_H / 2;
+      const shift = offsets[index] ?? { x: 0, y: 0 };
+      placePin(rep, Math.round(cx + shift.x - anchorX), Math.round(cy + shift.y - anchorY));
+      for (const pin of scene) {
+        if (pin !== rep) placePin(pin, 0, 0);
+        nextMembers.set(pin.spot.id, scene);
+      }
+      const count = scene.length;
+      if (count > 1) {
+        rep.badge.hidden = false;
+        rep.badge.textContent = String(count);
+        const label = `${rep.spot.animeName} · ${count} 张照片`;
+        rep.button.title = label;
+        rep.button.setAttribute("aria-label", `${label}，点击查看`);
+      } else {
+        rep.badge.hidden = true;
+        rep.badge.textContent = "";
+        const label = `${rep.spot.animeName} · ${rep.spot.pointName}`;
+        rep.button.title = label;
+        rep.button.setAttribute("aria-label", label);
+      }
+      const img = rep.button.querySelector("img");
+      if (!img || img.classList.contains("is-ready")) {
+        for (const page of scene) warmPopup(page.spot);
+      }
+    });
+    for (const pin of items) setShown(pin, shown.has(pin));
   }
 
   membersOf = nextMembers;
@@ -282,13 +398,21 @@ function scheduleLayout() {
 
 function onThumbClick(m: MlMap, pin: Pin) {
   const members = membersOf.get(pin.spot.id) ?? [pin];
-  if (members.length <= 1 || spreadOf(members) < SAME_SPOT || m.getZoom() >= CLUSTER_MAX_ZOOM) {
+  const scenes = sceneGroups(members);
+  if (scenes.length <= 1) {
     openPopup(m, pin.spot);
+    return;
+  }
+  closePopup();
+  // 不同场景靠得太近，放大到顶后由 layout 把图钉散开，而不是合成一个浮窗。
+  if (spreadOf(members) < SAME_SPOT) {
+    if (m.getZoom() < CLUSTER_MAX_ZOOM) {
+      m.easeTo({ center: [pin.spot.lng, pin.spot.lat], zoom: CLUSTER_MAX_ZOOM, duration: 400 });
+    }
     return;
   }
   const bounds = new LngLatBounds();
   for (const member of members) bounds.extend([member.spot.lng, member.spot.lat]);
-  closePopup();
   const view = Math.min(m.getContainer().clientWidth, m.getContainer().clientHeight);
   const padding = Math.max(48, Math.min(100, Math.round(view * 0.2)));
   m.fitBounds(bounds, { padding, maxZoom: CLUSTER_MAX_ZOOM, duration: 400 });
@@ -403,8 +527,10 @@ onMounted(() => {
   for (const g of groups) {
     for (const s of g.spots) {
       const { button, badge } = createThumb(s);
-      new Marker({ element: button, anchor: "bottom" }).setLngLat([s.lng, s.lat]).addTo(m);
-      const pin: Pin = { group: g.key, spot: s, button, badge };
+      const marker = new Marker({ element: button, anchor: "bottom" })
+        .setLngLat([s.lng, s.lat])
+        .addTo(m);
+      const pin: Pin = { group: g.key, spot: s, button, badge, marker, offset: { x: 0, y: 0 } };
       button.addEventListener("click", (ev) => {
         ev.stopPropagation();
         onThumbClick(m, pin);
