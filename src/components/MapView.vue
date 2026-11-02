@@ -12,7 +12,7 @@ const container = ref<HTMLDivElement>();
 const map = shallowRef<MlMap>();
 const error = ref<string | null>(null);
 const hidden = ref(new Set<string>());
-/** 小于 Tailwind sm（640px）算窄屏。图例靠左，收起后只在左边缘留一个小胶囊。 */
+/** 小于 Tailwind sm（640px）算窄屏。把手在面板高度上垂直居中，收起后仍停在这个高度。 */
 const LEGEND_NARROW_QUERY = "(max-width: 639px)";
 const narrow = ref(window.matchMedia(LEGEND_NARROW_QUERY).matches);
 const legendCollapsed = ref(true);
@@ -631,7 +631,7 @@ onBeforeUnmount(() => {
 
     <aside
       data-map-legend
-      class="absolute top-2.5 z-10 flex w-max max-w-[calc(70vw+44px)] items-start transition-transform duration-200 ease-out motion-reduce:transition-none"
+      class="absolute top-2.5 z-10 flex w-max max-w-[calc(70vw+50px)] items-center transition-transform duration-200 ease-out motion-reduce:transition-none"
       :class="
         narrow
           ? legendCollapsed
@@ -688,7 +688,7 @@ onBeforeUnmount(() => {
         v-if="narrow"
         type="button"
         data-legend-handle
-        class="group relative -ml-1 h-[52px] w-11 shrink-0 border-0 bg-transparent p-0"
+        class="group relative -ml-1 h-[52px] w-[50px] shrink-0 border-0 bg-transparent p-0"
         :aria-expanded="!legendCollapsed"
         aria-controls="map-legend-panel"
         :aria-label="legendCollapsed ? '展开图例' : '收起图例'"
@@ -696,7 +696,7 @@ onBeforeUnmount(() => {
         @click="toggleLegend"
       >
         <span
-          class="pointer-events-none absolute top-0 left-0 flex h-[52px] w-4 items-center justify-center rounded-r-full bg-white/80 text-black/45 shadow-[0_0_0_2px_rgba(0,0,0,0.1)] backdrop-blur-md group-hover:bg-white/95 group-hover:text-[#333]"
+          class="legend-ear pointer-events-none absolute top-0 flex h-[52px] w-4 items-center justify-center text-black/45 group-hover:text-[#333]"
         >
           <span
             class="h-3 w-3"
@@ -718,6 +718,31 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
+/* 与图例面板相同：白底、右侧 4px 圆角、2px 的 10% 黑描边环。相接一侧裁掉描边，避免双线。 */
+.legend-ear {
+  left: 0;
+  background: #fff;
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 10%);
+  clip-path: inset(-2px -2px -2px 0);
+  transition: left 200ms ease-out;
+}
+
+/* 收起时整卡再往左 6px，把面板和描边都推出屏幕；耳朵右移同样的 6px，仍贴在左边缘。 */
+.is-collapsed .legend-ear {
+  left: 6px;
+}
+
+.group:hover .legend-ear {
+  background: #f2f2f2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .legend-ear {
+    transition: none;
+  }
+}
+
 .maplibregl-popup.spot-popup .maplibregl-popup-content {
   padding: 0;
   border-radius: 4px;
