@@ -219,8 +219,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
           <span
             v-if="spot.photo && !photoFailed && photoLoaded && spot.takenAt"
             class="pointer-events-none absolute right-1 bottom-1 max-w-[calc(100%-8px)] truncate rounded-sm bg-black/50 px-1 py-0.5 text-[11px] leading-[14px] whitespace-nowrap text-white"
+            :aria-label="`拍摄时间 ${spot.takenAt.slice(0, 10)}`"
           >
-            拍摄：{{ spot.takenAt.slice(0, 10) }}
+            {{ spot.takenAt.slice(0, 10) }}
           </span>
         </div>
         <figcaption class="mt-1 flex h-5 items-center text-black/55">
