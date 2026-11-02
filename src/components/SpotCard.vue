@@ -67,6 +67,17 @@ const SOURCE_LABEL: Record<Spot["source"], string> = {
       </figure>
     </div>
 
+    <div v-if="spot.anitabiPointId && spot.bangumiId != null" class="px-4 pt-3">
+      <a
+        :href="`https://www.anitabi.cn/map?bangumiId=${spot.bangumiId}&pid=${spot.anitabiPointId}`"
+        target="_blank"
+        rel="noopener"
+        class="inline-flex rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+      >
+        在 anitabi 查看此地标
+      </a>
+    </div>
+
     <footer class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-xs text-gray-500">
       <span>坐标：{{ SOURCE_LABEL[spot.source] }}</span>
       <span v-if="spot.takenAt">拍摄：{{ spot.takenAt.slice(0, 10) }}</span>
