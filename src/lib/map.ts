@@ -13,6 +13,10 @@ export const DEFAULT_MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liber
 
 export const MAP_STYLE_URL = import.meta.env.VITE_MAP_STYLE_URL?.trim() || DEFAULT_MAP_STYLE_URL;
 
+/** 平面建筑。背景是 #f8f4f0，填充只深一点，轮廓再深一档。 */
+const BUILDING_FILL_COLOR = "#f1ece6";
+const BUILDING_OUTLINE_COLOR = "#e6dfd6";
+
 /** 西南、东北。可视范围限制在日本周边。 */
 export const MAP_MAX_BOUNDS: [[number, number], [number, number]] = [
   [122.5, 23.5],
@@ -160,7 +164,12 @@ export function simplifyBasemap(map: Map) {
   }
   for (const layer of layers) {
     if (layer.type !== "fill" || !layer.id.toLowerCase().includes("building")) continue;
-    if (!map.getLayer(layer.id) || typeof layer.maxzoom !== "number") continue;
+    if (!map.getLayer(layer.id)) continue;
+    map.setPaintProperty(layer.id, "fill-color", BUILDING_FILL_COLOR);
+    if (map.getPaintProperty(layer.id, "fill-outline-color") != null) {
+      map.setPaintProperty(layer.id, "fill-outline-color", BUILDING_OUTLINE_COLOR);
+    }
+    if (typeof layer.maxzoom !== "number") continue;
     map.setLayerZoomRange(layer.id, layer.minzoom ?? 0, 24);
   }
   for (const id of ["poi_r1", "poi_r7", "poi_r20"]) keepClass(map, id, RAILWAY_CLASS);
