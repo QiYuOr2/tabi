@@ -4,13 +4,12 @@ import { createApp, onBeforeUnmount, onMounted, ref, shallowRef, type App } from
 import { clusterByDistance, THUMB_GAP, THUMB_H, THUMB_W, type ScreenPoint } from "../lib/cluster";
 import { imagePlan, prefetchImage } from "../lib/images";
 import {
-  MAP_MAX_BOUNDS,
-  MAP_MIN_ZOOM,
   MAP_STYLE_URL,
   coverOutsideJapan,
   ensureMapWorker,
   preferCjkLabels,
   simplifyBasemap,
+  syncMapOverview,
 } from "../lib/map";
 import { PhotoCreditControl } from "../lib/photo-credit-control";
 import { groupByAnime, spots } from "../lib/spots";
@@ -574,13 +573,12 @@ onMounted(() => {
     style: MAP_STYLE_URL,
     center: [135.78, 34.95],
     zoom: 5,
-    minZoom: MAP_MIN_ZOOM,
-    maxBounds: MAP_MAX_BOUNDS,
     pitch: 0,
     maxPitch: 0,
     pitchWithRotate: false,
   });
   map.value = m;
+  syncMapOverview(m);
   m.addControl(new NavigationControl(), "bottom-right");
   m.addControl(new PhotoCreditControl(), "bottom-left");
   m.on("style.load", () => {
@@ -589,6 +587,7 @@ onMounted(() => {
     coverOutsideJapan(m);
   });
   m.on("resize", () => {
+    syncMapOverview(m);
     if (popup) {
       const width = popupMaxWidth(m);
       popup.setMaxWidth(width);
