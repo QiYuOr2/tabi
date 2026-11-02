@@ -178,23 +178,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
       >
         ‹
       </button>
-      <div class="flex min-w-0 flex-1 items-center justify-center gap-0.5">
-        <button
-          v-for="(page, i) in spots"
-          :key="page.id"
-          type="button"
-          class="grid h-[29px] w-[18px] place-items-center border-0 bg-transparent p-0"
-          :aria-label="`第 ${i + 1} 张，共 ${total} 张`"
-          :aria-current="i === index ? 'true' : undefined"
-          @click="show(i)"
-        >
-          <span
-            class="h-1.5 w-1.5 rounded-full"
-            :class="i === index ? 'bg-[#333]' : 'bg-black/25'"
-          />
-        </button>
-        <span class="ml-1 text-black/55">{{ index + 1 }} / {{ total }}</span>
-      </div>
+      <span class="min-w-0 flex-1 text-center text-black/55">{{ index + 1 }} / {{ total }}</span>
       <button
         type="button"
         class="h-[29px] w-[29px] shrink-0 rounded border-0 bg-transparent p-0 text-lg leading-[29px] text-[#333] hover:bg-black/5 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
