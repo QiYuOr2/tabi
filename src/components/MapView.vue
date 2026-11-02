@@ -4,6 +4,7 @@ import { createApp, onBeforeUnmount, onMounted, ref, shallowRef, type App } from
 import { clusterByDistance, THUMB_GAP, THUMB_H, THUMB_W, type ScreenPoint } from "../lib/cluster";
 import { imagePlan, prefetchImage } from "../lib/images";
 import { MAP_STYLE_URL, ensureMapWorker, preferCjkLabels, simplifyBasemap } from "../lib/map";
+import { PhotoCreditControl } from "../lib/photo-credit-control";
 import { groupByAnime, spots } from "../lib/spots";
 import type { Spot } from "../types/spot";
 import SpotCard from "./SpotCard.vue";
@@ -92,16 +93,27 @@ function panPopupIntoView(m: MlMap, p: Popup) {
   ) {
     minTop = Math.max(minTop, legend.bottom + margin);
   }
-  const controls = m.getContainer().querySelector(".maplibregl-ctrl-bottom-right");
-  const ctrl = controls?.getBoundingClientRect();
+  const rightControls = m.getContainer().querySelector(".maplibregl-ctrl-bottom-right");
+  const right = rightControls?.getBoundingClientRect();
   if (
-    ctrl &&
-    ctrl.width > 0 &&
-    rect.right > ctrl.left - margin &&
-    rect.bottom > ctrl.top - margin
+    right &&
+    right.width > 0 &&
+    rect.right > right.left - margin &&
+    rect.bottom > right.top - margin
   ) {
-    maxBottom = Math.min(maxBottom, ctrl.top - margin);
-    maxRight = Math.min(maxRight, ctrl.left - margin);
+    maxBottom = Math.min(maxBottom, right.top - margin);
+    maxRight = Math.min(maxRight, right.left - margin);
+  }
+  const leftControls = m.getContainer().querySelector(".maplibregl-ctrl-bottom-left");
+  const left = leftControls?.getBoundingClientRect();
+  if (
+    left &&
+    left.width > 0 &&
+    rect.left < left.right + margin &&
+    rect.bottom > left.top - margin
+  ) {
+    maxBottom = Math.min(maxBottom, left.top - margin);
+    minLeft = Math.max(minLeft, left.right + margin);
   }
 
   let x = 0;
@@ -557,6 +569,7 @@ onMounted(() => {
   });
   map.value = m;
   m.addControl(new NavigationControl(), "bottom-right");
+  m.addControl(new PhotoCreditControl(), "bottom-left");
   m.on("style.load", () => {
     simplifyBasemap(m);
     preferCjkLabels(m);

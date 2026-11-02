@@ -38,6 +38,9 @@ const WORK_BY_BANGUMI: Record<number, { key: string; name: string }> = {
   175600: { key: "fate-stay-night", name: "Fate/stay night 系列" },
   474906: { key: "shoushimin", name: "小市民系列" },
   513018: { key: "shoushimin", name: "小市民系列" },
+  485: { key: "haruhi", name: "凉宫春日系列" },
+  1606: { key: "haruhi", name: "凉宫春日系列" },
+  3375: { key: "haruhi", name: "凉宫春日系列" },
 };
 
 function workOf(spot: Spot): { key: string; name: string } {
