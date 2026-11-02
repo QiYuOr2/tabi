@@ -28,8 +28,6 @@ export interface Spot {
   /** 截图来源署名（anitabi 要求标注 origin 并可跳转 originURL），可选 */
   origin?: string | null;
   originURL?: string | null;
-  /** 示例数据标记，正式数据不写或为 false */
-  example?: boolean;
 }
 
 /** import-photos 产出的待定位记录（没有 GPS） */

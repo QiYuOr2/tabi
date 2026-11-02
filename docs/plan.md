@@ -37,7 +37,6 @@ interface Spot {
   anitabiPointId: string | null;
   origin?: string | null;
   originURL?: string | null;
-  example?: boolean;
 }
 ```
 
