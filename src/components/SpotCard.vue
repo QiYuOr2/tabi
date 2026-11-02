@@ -216,6 +216,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
           >
             {{ spot.photo ? "图片加载失败" : "暂无实拍" }}
           </div>
+          <span
+            v-if="spot.photo && !photoFailed && photoLoaded && spot.takenAt"
+            class="pointer-events-none absolute right-1 bottom-1 max-w-[calc(100%-8px)] truncate rounded-sm bg-black/50 px-1 py-0.5 text-[11px] leading-[14px] whitespace-nowrap text-white"
+          >
+            拍摄：{{ spot.takenAt.slice(0, 10) }}
+          </span>
         </div>
         <figcaption class="mt-1 flex h-5 items-center text-black/55">
           <span>实拍</span>
@@ -230,9 +236,6 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
             <span class="i-lucide-zoom-in h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </figcaption>
-        <p v-if="spot.takenAt" class="m-0 mt-0.5 min-w-0 text-black/55">
-          拍摄：{{ spot.takenAt.slice(0, 10) }}
-        </p>
       </figure>
     </div>
 
