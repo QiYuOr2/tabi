@@ -12,7 +12,7 @@ const container = ref<HTMLDivElement>();
 const map = shallowRef<MlMap>();
 const error = ref<string | null>(null);
 const hidden = ref(new Set<string>());
-/** 小于 Tailwind sm（640px）算窄屏。图例靠左，向左收起不会挡住右下角的缩放控件。 */
+/** 小于 Tailwind sm（640px）算窄屏。图例靠左，收起后只在左边缘留一个小胶囊。 */
 const LEGEND_NARROW_QUERY = "(max-width: 639px)";
 const narrow = ref(window.matchMedia(LEGEND_NARROW_QUERY).matches);
 const legendCollapsed = ref(true);
@@ -631,16 +631,20 @@ onBeforeUnmount(() => {
 
     <aside
       data-map-legend
-      class="absolute top-2.5 z-10 flex max-w-[70vw] items-stretch rounded bg-white text-xs leading-5 text-[#333] shadow-[0_0_0_2px_rgba(0,0,0,0.1)] transition-transform duration-200 ease-out motion-reduce:transition-none"
+      class="absolute top-2.5 z-10 flex w-max max-w-[calc(70vw+44px)] items-start transition-transform duration-200 ease-out motion-reduce:transition-none"
       :class="
         narrow
           ? legendCollapsed
-            ? 'is-collapsed left-0 -translate-x-[calc(100%-29px)]'
+            ? 'is-collapsed left-0 -translate-x-[calc(100%-44px)]'
             : 'left-0 translate-x-2.5'
           : 'left-2.5'
       "
     >
-      <div id="map-legend-panel" class="min-w-0" :inert="narrow && legendCollapsed">
+      <div
+        id="map-legend-panel"
+        class="min-w-0 max-w-[70vw] rounded bg-white text-xs leading-5 text-[#333] shadow-[0_0_0_2px_rgba(0,0,0,0.1)]"
+        :inert="narrow && legendCollapsed"
+      >
         <h1 class="m-0 px-2.5 pt-1.5 font-semibold">巡礼地图</h1>
         <ul class="m-0 list-none p-1">
           <li
@@ -684,8 +688,7 @@ onBeforeUnmount(() => {
         v-if="narrow"
         type="button"
         data-legend-handle
-        class="grid w-[29px] shrink-0 place-items-center rounded-r border-0 bg-transparent p-0 text-black/45 hover:bg-black/5 hover:text-[#333]"
-        :class="legendCollapsed ? '' : 'shadow-[inset_1px_0_0_#ddd]'"
+        class="group relative -ml-1 h-[52px] w-11 shrink-0 border-0 bg-transparent p-0"
         :aria-expanded="!legendCollapsed"
         aria-controls="map-legend-panel"
         :aria-label="legendCollapsed ? '展开图例' : '收起图例'"
@@ -693,10 +696,14 @@ onBeforeUnmount(() => {
         @click="toggleLegend"
       >
         <span
-          class="h-4 w-4"
-          :class="legendCollapsed ? 'i-lucide-chevron-right' : 'i-lucide-chevron-left'"
-          aria-hidden="true"
-        />
+          class="pointer-events-none absolute top-0 left-0 flex h-[52px] w-4 items-center justify-center rounded-r-full bg-white/80 text-black/45 shadow-[0_0_0_2px_rgba(0,0,0,0.1)] backdrop-blur-md group-hover:bg-white/95 group-hover:text-[#333]"
+        >
+          <span
+            class="h-3 w-3"
+            :class="legendCollapsed ? 'i-lucide-chevron-right' : 'i-lucide-chevron-left'"
+            aria-hidden="true"
+          />
+        </span>
       </button>
     </aside>
 
