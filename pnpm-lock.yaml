@@ -185,9 +185,15 @@ importers:
         specifier: ^3.5.44
         version: 3.5.44(typescript@6.0.3)
     devDependencies:
+      '@iconify-json/lucide':
+        specifier: ^1.2.150
+        version: 1.2.150
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
+      '@unocss/preset-icons':
+        specifier: ^66.12.0
+        version: 66.12.0
       '@unocss/reset':
         specifier: ^66.12.0
         version: 66.12.0
@@ -254,6 +260,9 @@ packages:
 
   '@emnapi/runtime@1.11.3':
     resolution: {integrity: sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==}
+
+  '@iconify-json/lucide@1.2.150':
+    resolution: {integrity: sha512-av3IH1CB8RuKrlKGDmBbt6dLYtZus1Vr89VOysxORLhKcTr4ARe4Dmp0gL7Q47sK9GMkyROn1a+h07tAYpSuEw==}
 
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
@@ -1944,6 +1953,10 @@ snapshots:
     dependencies:
       tslib: 2.9.1
     optional: true
+
+  '@iconify-json/lucide@1.2.150':
+    dependencies:
+      '@iconify/types': 2.0.0
 
   '@iconify/types@2.0.0': {}
 
