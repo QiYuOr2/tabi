@@ -496,6 +496,36 @@ function toggleGroup(key: string) {
   scheduleLayout();
 }
 
+/** 只有一个地点时飞到这一级，多地点的包围盒也不会放得比这更近。 */
+const FOCUS_ZOOM = 16;
+
+function focusGroup(key: string) {
+  const m = map.value;
+  const group = groups.find((item) => item.key === key);
+  if (!m || !group || group.spots.length === 0) return;
+  if (hidden.value.has(key)) {
+    const next = new Set(hidden.value);
+    next.delete(key);
+    hidden.value = next;
+    scheduleLayout();
+  }
+  closePopup();
+  if (group.spots.length === 1) {
+    const spot = group.spots[0]!;
+    m.flyTo({ center: [spot.lng, spot.lat], zoom: FOCUS_ZOOM, duration: 400 });
+    return;
+  }
+  const bounds = new LngLatBounds();
+  for (const spot of group.spots) bounds.extend([spot.lng, spot.lat]);
+  const view = Math.min(m.getContainer().clientWidth, m.getContainer().clientHeight);
+  const padding = Math.max(48, Math.min(80, Math.round(view * 0.12)));
+  m.fitBounds(bounds, {
+    padding: { top: padding + 40, right: padding, bottom: padding, left: padding + 24 },
+    maxZoom: FOCUS_ZOOM,
+    duration: 400,
+  });
+}
+
 onMounted(() => {
   ensureMapWorker();
   const m = new MlMap({
@@ -583,16 +613,37 @@ onBeforeUnmount(() => {
     >
       <h1 class="m-0 px-2.5 pt-1.5 font-semibold">巡礼地图</h1>
       <ul class="m-0 list-none p-1">
-        <li v-for="g in groups" :key="g.key">
+        <li
+          v-for="g in groups"
+          :key="g.key"
+          class="flex items-center"
+          :class="{ 'opacity-40': hidden.has(g.key) }"
+        >
+          <span class="ml-1.5 h-2 w-2 shrink-0 rounded-full" :style="{ background: g.color }" />
+          <span class="min-w-0 flex-1 truncate px-1.5">{{ g.animeName }}</span>
+          <span class="shrink-0 pr-0.5 text-black/45">{{ g.spots.length }}</span>
           <button
             type="button"
-            class="flex h-[29px] w-full items-center gap-1.5 rounded border-0 bg-transparent px-1.5 text-left text-xs text-[#333] hover:bg-black/5"
-            :class="{ 'opacity-40': hidden.has(g.key) }"
+            class="grid h-[29px] w-[29px] shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-black/45 hover:bg-black/5 hover:text-[#333]"
+            :aria-label="`定位到${g.animeName}`"
+            :title="`定位到${g.animeName}`"
+            @click="focusGroup(g.key)"
+          >
+            <span class="i-lucide-locate-fixed h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="mr-0.5 grid h-[29px] w-[29px] shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-black/45 hover:bg-black/5 hover:text-[#333]"
+            :aria-label="hidden.has(g.key) ? `显示${g.animeName}` : `隐藏${g.animeName}`"
+            :title="hidden.has(g.key) ? `显示${g.animeName}` : `隐藏${g.animeName}`"
+            :aria-pressed="hidden.has(g.key) ? 'false' : 'true'"
             @click="toggleGroup(g.key)"
           >
-            <span class="h-2 w-2 shrink-0 rounded-full" :style="{ background: g.color }" />
-            <span class="truncate">{{ g.animeName }}</span>
-            <span class="ml-auto text-black/45">{{ g.spots.length }}</span>
+            <span
+              class="h-4 w-4"
+              :class="hidden.has(g.key) ? 'i-lucide-eye-off' : 'i-lucide-eye'"
+              aria-hidden="true"
+            />
           </button>
         </li>
       </ul>
