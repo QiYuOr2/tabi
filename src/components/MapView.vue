@@ -12,6 +12,19 @@ const container = ref<HTMLDivElement>();
 const map = shallowRef<MlMap>();
 const error = ref<string | null>(null);
 const hidden = ref(new Set<string>());
+/** 小于 Tailwind sm（640px）算窄屏。把手在面板高度上垂直居中，收起后仍停在这个高度。 */
+const LEGEND_NARROW_QUERY = "(max-width: 639px)";
+const narrow = ref(window.matchMedia(LEGEND_NARROW_QUERY).matches);
+const legendCollapsed = ref(true);
+let legendMedia: MediaQueryList | undefined;
+
+function onLegendMedia() {
+  narrow.value = legendMedia?.matches ?? false;
+}
+
+function toggleLegend() {
+  legendCollapsed.value = !legendCollapsed.value;
+}
 
 const groups = groupByAnime(spots);
 const colorOf = (s: Spot) => groups.find((g) => g.spots.includes(s))?.color ?? "#555";
@@ -65,7 +78,12 @@ function panPopupIntoView(m: MlMap, p: Popup) {
   let maxRight = mapRect.right - margin;
   let maxBottom = mapRect.bottom - margin;
 
-  const legend = document.querySelector("[data-map-legend]")?.getBoundingClientRect();
+  const legendRoot = document.querySelector("[data-map-legend]");
+  const legend = (
+    legendRoot?.classList.contains("is-collapsed")
+      ? legendRoot.querySelector("[data-legend-handle]")
+      : legendRoot
+  )?.getBoundingClientRect();
   if (
     legend &&
     legend.width > 0 &&
@@ -527,6 +545,9 @@ function focusGroup(key: string) {
 }
 
 onMounted(() => {
+  legendMedia = window.matchMedia(LEGEND_NARROW_QUERY);
+  onLegendMedia();
+  legendMedia.addEventListener("change", onLegendMedia);
   ensureMapWorker();
   const m = new MlMap({
     container: container.value!,
@@ -597,6 +618,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  legendMedia?.removeEventListener("change", onLegendMedia);
   closePopup();
   map.value?.remove();
 });
@@ -609,44 +631,80 @@ onBeforeUnmount(() => {
 
     <aside
       data-map-legend
-      class="absolute top-2.5 left-2.5 z-10 max-w-[70vw] rounded bg-white text-xs leading-5 text-[#333] shadow-[0_0_0_2px_rgba(0,0,0,0.1)]"
+      class="absolute top-2.5 z-10 flex w-max max-w-[calc(70vw+50px)] items-center transition-transform duration-200 ease-out motion-reduce:transition-none"
+      :class="
+        narrow
+          ? legendCollapsed
+            ? 'is-collapsed left-0 -translate-x-[calc(100%-44px)]'
+            : 'left-0 translate-x-2.5'
+          : 'left-2.5'
+      "
     >
-      <h1 class="m-0 px-2.5 pt-1.5 font-semibold">巡礼地图</h1>
-      <ul class="m-0 list-none p-1">
-        <li
-          v-for="g in groups"
-          :key="g.key"
-          class="flex items-center"
-          :class="{ 'opacity-40': hidden.has(g.key) }"
+      <div
+        id="map-legend-panel"
+        class="min-w-0 max-w-[70vw] rounded bg-white text-xs leading-5 text-[#333] shadow-[0_0_0_2px_rgba(0,0,0,0.1)]"
+        :inert="narrow && legendCollapsed"
+      >
+        <h1 class="m-0 px-2.5 pt-1.5 font-semibold">巡礼地图</h1>
+        <ul class="m-0 list-none p-1">
+          <li
+            v-for="g in groups"
+            :key="g.key"
+            class="flex items-center"
+            :class="{ 'opacity-40': hidden.has(g.key) }"
+          >
+            <span class="ml-1.5 h-2 w-2 shrink-0 rounded-full" :style="{ background: g.color }" />
+            <span class="min-w-0 flex-1 truncate px-1.5">{{ g.animeName }}</span>
+            <span class="shrink-0 text-black/45">{{ g.spots.length }}</span>
+            <div class="ml-2 flex shrink-0 pr-0.5">
+              <button
+                type="button"
+                class="grid h-[29px] w-[29px] shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-black/45 hover:bg-black/5 hover:text-[#333]"
+                :aria-label="`定位到${g.animeName}`"
+                :title="`定位到${g.animeName}`"
+                @click="focusGroup(g.key)"
+              >
+                <span class="i-lucide-locate-fixed h-4 w-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                class="-ml-1.5 grid h-[29px] w-[29px] shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-black/45 hover:bg-black/5 hover:text-[#333]"
+                :aria-label="hidden.has(g.key) ? `显示${g.animeName}` : `隐藏${g.animeName}`"
+                :title="hidden.has(g.key) ? `显示${g.animeName}` : `隐藏${g.animeName}`"
+                :aria-pressed="hidden.has(g.key) ? 'false' : 'true'"
+                @click="toggleGroup(g.key)"
+              >
+                <span
+                  class="h-4 w-4"
+                  :class="hidden.has(g.key) ? 'i-lucide-eye-off' : 'i-lucide-eye'"
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
+          </li>
+        </ul>
+      </div>
+      <button
+        v-if="narrow"
+        type="button"
+        data-legend-handle
+        class="group relative -ml-1 h-[52px] w-[50px] shrink-0 border-0 bg-transparent p-0"
+        :aria-expanded="!legendCollapsed"
+        aria-controls="map-legend-panel"
+        :aria-label="legendCollapsed ? '展开图例' : '收起图例'"
+        :title="legendCollapsed ? '展开图例' : '收起图例'"
+        @click="toggleLegend"
+      >
+        <span
+          class="legend-ear pointer-events-none absolute top-0 flex h-[52px] w-4 items-center justify-center text-black/45 group-hover:text-[#333]"
         >
-          <span class="ml-1.5 h-2 w-2 shrink-0 rounded-full" :style="{ background: g.color }" />
-          <span class="min-w-0 flex-1 truncate px-1.5">{{ g.animeName }}</span>
-          <span class="shrink-0 pr-0.5 text-black/45">{{ g.spots.length }}</span>
-          <button
-            type="button"
-            class="grid h-[29px] w-[29px] shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-black/45 hover:bg-black/5 hover:text-[#333]"
-            :aria-label="`定位到${g.animeName}`"
-            :title="`定位到${g.animeName}`"
-            @click="focusGroup(g.key)"
-          >
-            <span class="i-lucide-locate-fixed h-4 w-4" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            class="mr-0.5 grid h-[29px] w-[29px] shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-black/45 hover:bg-black/5 hover:text-[#333]"
-            :aria-label="hidden.has(g.key) ? `显示${g.animeName}` : `隐藏${g.animeName}`"
-            :title="hidden.has(g.key) ? `显示${g.animeName}` : `隐藏${g.animeName}`"
-            :aria-pressed="hidden.has(g.key) ? 'false' : 'true'"
-            @click="toggleGroup(g.key)"
-          >
-            <span
-              class="h-4 w-4"
-              :class="hidden.has(g.key) ? 'i-lucide-eye-off' : 'i-lucide-eye'"
-              aria-hidden="true"
-            />
-          </button>
-        </li>
-      </ul>
+          <span
+            class="h-3 w-3"
+            :class="legendCollapsed ? 'i-lucide-chevron-right' : 'i-lucide-chevron-left'"
+            aria-hidden="true"
+          />
+        </span>
+      </button>
     </aside>
 
     <div
@@ -660,6 +718,31 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
+/* 与图例面板相同：白底、右侧 4px 圆角、2px 的 10% 黑描边环。相接一侧裁掉描边，避免双线。 */
+.legend-ear {
+  left: 0;
+  background: #fff;
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 10%);
+  clip-path: inset(-2px -2px -2px 0);
+  transition: left 200ms ease-out;
+}
+
+/* 收起时整卡再往左 6px，把面板和描边都推出屏幕；耳朵右移同样的 6px，仍贴在左边缘。 */
+.is-collapsed .legend-ear {
+  left: 6px;
+}
+
+.group:hover .legend-ear {
+  background: #f2f2f2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .legend-ear {
+    transition: none;
+  }
+}
+
 .maplibregl-popup.spot-popup .maplibregl-popup-content {
   padding: 0;
   border-radius: 4px;
