@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
+import { imagePlan } from "../lib/images";
 import type { Spot } from "../types/spot";
 
-defineProps<{ spot: Spot; color: string; onClose: () => void }>();
+const props = defineProps<{ spot: Spot; color: string; onClose: () => void }>();
 
+const animeSrc = computed(() => imagePlan(props.spot.animeImage, "h360"));
 const animeFailed = ref(false);
+const animeLoaded = ref(false);
 const photoFailed = ref(false);
+const photoLoaded = ref(false);
 
 const SOURCE_LABEL: Record<Spot["source"], string> = {
   exif: "照片 EXIF",
@@ -34,34 +38,49 @@ const SOURCE_LABEL: Record<Spot["source"], string> = {
     </header>
 
     <div class="grid grid-cols-2 gap-1 px-2.5 pt-1.5">
-      <figure class="m-0">
+      <figure class="relative m-0">
         <img
-          v-if="spot.animeImage && !animeFailed"
-          :src="spot.animeImage"
+          v-if="animeSrc && !animeFailed"
+          :src="animeSrc"
           alt="动画截图"
           class="aspect-video w-full rounded-sm bg-[#f2f2f2] object-cover"
+          :class="animeLoaded ? 'opacity-100' : 'opacity-0'"
           referrerpolicy="no-referrer"
+          decoding="async"
+          fetchpriority="high"
+          @load="animeLoaded = true"
           @error="animeFailed = true"
         />
         <div
-          v-else
+          v-if="animeSrc && !animeFailed && !animeLoaded"
+          class="pointer-events-none absolute inset-0 animate-pulse rounded-sm bg-[#e6e6e6]"
+        />
+        <div
+          v-else-if="!animeSrc || animeFailed"
           class="grid aspect-video w-full place-items-center rounded-sm bg-[#f2f2f2] text-black/40"
         >
-          {{ spot.animeImage ? "图片加载失败" : "暂无截图" }}
+          {{ animeSrc ? "图片加载失败" : "暂无截图" }}
         </div>
         <figcaption class="mt-0.5 text-black/55">动画</figcaption>
       </figure>
-      <figure class="m-0">
+      <figure class="relative m-0">
         <img
           v-if="spot.photo && !photoFailed"
           :src="spot.photo"
           alt="实拍"
           class="aspect-video w-full rounded-sm bg-[#f2f2f2] object-cover"
+          :class="photoLoaded ? 'opacity-100' : 'opacity-0'"
           referrerpolicy="no-referrer"
+          decoding="async"
+          @load="photoLoaded = true"
           @error="photoFailed = true"
         />
         <div
-          v-else
+          v-if="spot.photo && !photoFailed && !photoLoaded"
+          class="pointer-events-none absolute inset-0 animate-pulse rounded-sm bg-[#e6e6e6]"
+        />
+        <div
+          v-else-if="!spot.photo || photoFailed"
           class="grid aspect-video w-full place-items-center rounded-sm bg-[#f2f2f2] text-black/40"
         >
           {{ spot.photo ? "图片加载失败" : "暂无实拍" }}

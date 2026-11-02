@@ -1,23 +1,41 @@
 <script setup lang="ts">
-import { LngLatBounds, Map, Marker, NavigationControl, Popup } from "maplibre-gl";
+import { LngLatBounds, Map as MlMap, Marker, NavigationControl, Popup } from "maplibre-gl";
 import { createApp, onBeforeUnmount, onMounted, ref, shallowRef, type App } from "vue";
+import { clusterByDistance, THUMB_GAP, THUMB_H, THUMB_W, type ScreenPoint } from "../lib/cluster";
+import { imagePlan, prefetchImage } from "../lib/images";
 import { MAP_STYLE_URL, ensureMapWorker, preferCjkLabels } from "../lib/map";
 import { groupByAnime, spots } from "../lib/spots";
 import type { Spot } from "../types/spot";
 import SpotCard from "./SpotCard.vue";
 
 const container = ref<HTMLDivElement>();
-const map = shallowRef<Map>();
+const map = shallowRef<MlMap>();
 const error = ref<string | null>(null);
 const hidden = ref(new Set<string>());
 
 const groups = groupByAnime(spots);
 const colorOf = (s: Spot) => groups.find((g) => g.spots.includes(s))?.color ?? "#555";
 
-const markers: { group: string; spot: Spot; marker: Marker }[] = [];
+/** 小于这个经纬跨度就当成同一地点，点击直接开弹层。大约十几米。 */
+const SAME_SPOT = 0.00008;
+/** 放到这一级仍叠在一起，就不再放大，直接开弹层。 */
+const CLUSTER_MAX_ZOOM = 17;
+
+interface Pin {
+  group: string;
+  spot: Spot;
+  button: HTMLButtonElement;
+  badge: HTMLSpanElement;
+}
+
+const pins: Pin[] = [];
+let membersOf = new Map<string, Pin[]>();
 let popup: Popup | null = null;
 let popupApp: App | null = null;
 let selectedId: string | null = null;
+let layoutQueued = false;
+
+for (const s of spots) prefetchImage(imagePlan(s.animeImage, "h160"));
 
 function closePopup() {
   selectedId = null;
@@ -27,13 +45,13 @@ function closePopup() {
   popup = null;
 }
 
-function popupMaxWidth(m: Map) {
+function popupMaxWidth(m: MlMap) {
   const width = m.getContainer().clientWidth;
   return `${Math.max(160, Math.min(300, width - 24))}px`;
 }
 
 /** 弹层超出地图或盖住图例/缩放按钮时，平移地图把它挪进可视区域。 */
-function panPopupIntoView(m: Map, p: Popup) {
+function panPopupIntoView(m: MlMap, p: Popup) {
   const el = p.getElement();
   if (!el) return;
   const mapRect = m.getContainer().getBoundingClientRect();
@@ -74,7 +92,7 @@ function panPopupIntoView(m: Map, p: Popup) {
   if (x !== 0 || y !== 0) m.panBy([x, y], { duration: 200 });
 }
 
-function schedulePan(m: Map, p: Popup) {
+function schedulePan(m: MlMap, p: Popup) {
   // 等弹层完成布局再量尺寸，否则宽度还是 0，平移不会发生。
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
@@ -83,9 +101,11 @@ function schedulePan(m: Map, p: Popup) {
   });
 }
 
-function openPopup(m: Map, spot: Spot) {
+function openPopup(m: MlMap, spot: Spot) {
   closePopup();
   selectedId = spot.id;
+  prefetchImage(imagePlan(spot.animeImage, "h360"));
+  if (spot.photo) prefetchImage(spot.photo);
   const host = document.createElement("div");
   // 先定宽，避免图片固有尺寸把弹层撑开后，平移按旧宽度算偏。
   host.style.width = popupMaxWidth(m);
@@ -96,13 +116,11 @@ function openPopup(m: Map, spot: Spot) {
   });
   popupApp.mount(host);
 
-  const marker = markers.find((item) => item.spot === spot)?.marker;
-  const pinHeight = marker?.getElement().offsetHeight ?? 41;
   const next = new Popup({
     closeButton: false,
     closeOnClick: false,
     anchor: "bottom",
-    offset: pinHeight + 6,
+    offset: THUMB_H + 8,
     maxWidth: popupMaxWidth(m),
     className: "spot-popup",
     focusAfterOpen: false,
@@ -121,21 +139,193 @@ function openPopup(m: Map, spot: Spot) {
   schedulePan(m, next);
 }
 
+function spreadOf(list: Pin[]) {
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  for (const pin of list) {
+    minLng = Math.min(minLng, pin.spot.lng);
+    maxLng = Math.max(maxLng, pin.spot.lng);
+    minLat = Math.min(minLat, pin.spot.lat);
+    maxLat = Math.max(maxLat, pin.spot.lat);
+  }
+  return Math.max(maxLng - minLng, maxLat - minLat);
+}
+
+function setShown(pin: Pin, shown: boolean) {
+  pin.button.classList.toggle("is-hidden", !shown);
+  pin.button.tabIndex = shown ? 0 : -1;
+  if (shown) pin.button.removeAttribute("aria-hidden");
+  else pin.button.setAttribute("aria-hidden", "true");
+}
+
+function layoutPins() {
+  const m = map.value;
+  if (!m) return;
+  const width = m.getContainer().clientWidth;
+  const height = m.getContainer().clientHeight;
+  const hiddenSet = hidden.value;
+  const projected: ScreenPoint<Pin>[] = [];
+
+  for (const pin of pins) {
+    if (hiddenSet.has(pin.group)) {
+      setShown(pin, false);
+      continue;
+    }
+    let p;
+    try {
+      p = m.project([pin.spot.lng, pin.spot.lat]);
+    } catch {
+      return;
+    }
+    // 锚点在缩略图底边中点，碰撞用画面中心。
+    projected.push({ item: pin, x: p.x, y: p.y - THUMB_H / 2 });
+  }
+
+  const clusters = clusterByDistance(projected, THUMB_W + THUMB_GAP, THUMB_H + THUMB_GAP);
+  const nextMembers = new Map<string, Pin[]>();
+
+  for (const cluster of clusters) {
+    const items = cluster.map((point) => point.item);
+    for (const pin of items) nextMembers.set(pin.spot.id, items);
+
+    const onScreen = cluster.filter((point) => {
+      const left = point.x - THUMB_W / 2;
+      const right = point.x + THUMB_W / 2;
+      const top = point.y - THUMB_H / 2;
+      const bottom = point.y + THUMB_H / 2;
+      return right > 0 && left < width && bottom > 0 && top < height;
+    });
+    if (onScreen.length === 0) {
+      for (const pin of items) setShown(pin, false);
+      continue;
+    }
+
+    onScreen.sort((a, b) => (a.item.spot.id < b.item.spot.id ? -1 : 1));
+    const rep = onScreen[0]!.item;
+    for (const pin of items) setShown(pin, pin === rep);
+
+    const count = items.length;
+    if (count > 1) {
+      rep.badge.hidden = false;
+      rep.badge.textContent = String(count);
+      const label = `${rep.spot.animeName} · ${count} 个地点`;
+      rep.button.title = label;
+      rep.button.setAttribute("aria-label", `${label}，点击放大`);
+    } else {
+      rep.badge.hidden = true;
+      rep.badge.textContent = "";
+      const label = `${rep.spot.animeName} · ${rep.spot.pointName}`;
+      rep.button.title = label;
+      rep.button.setAttribute("aria-label", label);
+    }
+    const img = rep.button.querySelector("img");
+    if (!img || img.classList.contains("is-ready"))
+      prefetchImage(imagePlan(rep.spot.animeImage, "h360"));
+  }
+
+  membersOf = nextMembers;
+}
+
+function scheduleLayout() {
+  if (layoutQueued) return;
+  layoutQueued = true;
+  requestAnimationFrame(() => {
+    layoutQueued = false;
+    layoutPins();
+  });
+}
+
+function onThumbClick(m: MlMap, pin: Pin) {
+  const members = membersOf.get(pin.spot.id) ?? [pin];
+  if (members.length <= 1 || spreadOf(members) < SAME_SPOT || m.getZoom() >= CLUSTER_MAX_ZOOM) {
+    openPopup(m, pin.spot);
+    return;
+  }
+  const bounds = new LngLatBounds();
+  for (const member of members) bounds.extend([member.spot.lng, member.spot.lat]);
+  closePopup();
+  const view = Math.min(m.getContainer().clientWidth, m.getContainer().clientHeight);
+  const padding = Math.max(48, Math.min(100, Math.round(view * 0.2)));
+  m.fitBounds(bounds, { padding, maxZoom: CLUSTER_MAX_ZOOM, duration: 400 });
+}
+
+function warmPopup(pin: Pin, m: MlMap) {
+  prefetchImage(imagePlan(pin.spot.animeImage, "h360"));
+  const members = membersOf.get(pin.spot.id) ?? [pin];
+  const opensNow =
+    members.length <= 1 || spreadOf(members) < SAME_SPOT || m.getZoom() >= CLUSTER_MAX_ZOOM;
+  if (opensNow && pin.spot.photo) prefetchImage(pin.spot.photo);
+}
+
+function createThumb(spot: Spot) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "spot-thumb is-hidden";
+  button.tabIndex = -1;
+  button.setAttribute("aria-hidden", "true");
+  const label = `${spot.animeName} · ${spot.pointName}`;
+  button.title = label;
+  button.setAttribute("aria-label", label);
+
+  const frame = document.createElement("span");
+  frame.className = "spot-thumb-frame";
+  const skel = document.createElement("span");
+  skel.className = "spot-thumb-skel";
+  skel.setAttribute("aria-hidden", "true");
+
+  const src = imagePlan(spot.animeImage, "h160");
+  if (src) {
+    const img = document.createElement("img");
+    img.className = "spot-thumb-img";
+    img.alt = "";
+    img.draggable = false;
+    img.referrerPolicy = "no-referrer";
+    img.decoding = "async";
+    const ready = () => {
+      img.classList.add("is-ready");
+      skel.remove();
+    };
+    img.addEventListener("load", () => {
+      ready();
+      // 小图出来之后再拉弹层用的 h360，避免和预览抢同一条慢源。
+      if (!button.classList.contains("is-hidden"))
+        prefetchImage(imagePlan(spot.animeImage, "h360"));
+    });
+    img.addEventListener("error", () => {
+      skel.classList.add("is-error");
+      skel.textContent = "无";
+    });
+    frame.append(img, skel);
+    img.src = src;
+    if (img.complete && img.naturalWidth > 0) ready();
+  } else {
+    skel.classList.add("is-error");
+    skel.textContent = "无";
+    frame.append(skel);
+  }
+
+  const badge = document.createElement("span");
+  badge.className = "spot-thumb-count";
+  badge.hidden = true;
+  button.append(frame, badge);
+  return { button, badge };
+}
+
 function toggleGroup(key: string) {
   const next = new Set(hidden.value);
   if (next.has(key)) next.delete(key);
   else next.add(key);
   hidden.value = next;
-  for (const item of markers) {
-    item.marker.getElement().style.display = next.has(item.group) ? "none" : "";
-  }
-  const selected = markers.find((item) => item.spot.id === selectedId);
+  const selected = pins.find((item) => item.spot.id === selectedId);
   if (selected && next.has(selected.group)) closePopup();
+  scheduleLayout();
 }
 
 onMounted(() => {
   ensureMapWorker();
-  const m = new Map({
+  const m = new MlMap({
     container: container.value!,
     style: MAP_STYLE_URL,
     center: [135.78, 34.95],
@@ -145,12 +335,14 @@ onMounted(() => {
   m.addControl(new NavigationControl(), "bottom-right");
   m.on("style.load", () => preferCjkLabels(m));
   m.on("resize", () => {
-    if (!popup) return;
-    const width = popupMaxWidth(m);
-    popup.setMaxWidth(width);
-    const inner = popup.getElement()?.querySelector(".maplibregl-popup-content > div");
-    if (inner instanceof HTMLElement) inner.style.width = width;
-    schedulePan(m, popup);
+    if (popup) {
+      const width = popupMaxWidth(m);
+      popup.setMaxWidth(width);
+      const inner = popup.getElement()?.querySelector(".maplibregl-popup-content > div");
+      if (inner instanceof HTMLElement) inner.style.width = width;
+      schedulePan(m, popup);
+    }
+    scheduleLayout();
   });
   m.on("error", (e) => {
     const msg = (e.error as Error | undefined)?.message ?? String(e.error);
@@ -161,19 +353,37 @@ onMounted(() => {
   const bounds = new LngLatBounds();
   for (const g of groups) {
     for (const s of g.spots) {
-      const marker = new Marker({ color: g.color }).setLngLat([s.lng, s.lat]).addTo(m);
-      const el = marker.getElement();
-      el.style.cursor = "pointer";
-      el.title = `${s.animeName} · ${s.pointName}`;
-      el.addEventListener("click", (ev) => {
+      const { button, badge } = createThumb(s);
+      new Marker({ element: button, anchor: "bottom" }).setLngLat([s.lng, s.lat]).addTo(m);
+      const pin: Pin = { group: g.key, spot: s, button, badge };
+      button.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        openPopup(m, s);
+        onThumbClick(m, pin);
       });
-      markers.push({ group: g.key, spot: s, marker });
+      const warm = () => warmPopup(pin, m);
+      // 地图在画布容器上听触摸。不拦住的话，点缩略图会被当成拖地图，手机上就打不开弹层。
+      const keep = (ev: Event) => ev.stopPropagation();
+      button.addEventListener("pointerdown", keep);
+      button.addEventListener("mousedown", keep);
+      button.addEventListener(
+        "touchstart",
+        (ev) => {
+          ev.stopPropagation();
+          warm();
+        },
+        { passive: true },
+      );
+      button.addEventListener("pointerenter", warm);
+      pins.push(pin);
       bounds.extend([s.lng, s.lat]);
     }
   }
   if (!bounds.isEmpty()) m.fitBounds(bounds, { padding: 64, maxZoom: 14, duration: 0 });
+  m.on("load", scheduleLayout);
+  m.on("move", scheduleLayout);
+  m.on("moveend", scheduleLayout);
+  m.on("idle", scheduleLayout);
+  if (m.loaded()) scheduleLayout();
   m.on("click", (e) => {
     const target = e.originalEvent.target as HTMLElement | null;
     if (target?.closest(".maplibregl-marker") || target?.closest(".maplibregl-popup")) return;
@@ -235,5 +445,102 @@ onBeforeUnmount(() => {
 
 .maplibregl-popup.spot-popup img {
   min-width: 0;
+}
+
+button.spot-thumb {
+  box-sizing: border-box;
+  display: block;
+  width: 80px;
+  height: 45px;
+  margin: 0;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 10%);
+  cursor: pointer;
+  font: inherit;
+  line-height: 0;
+}
+
+button.spot-thumb.is-hidden {
+  display: none;
+}
+
+button.spot-thumb:hover,
+button.spot-thumb:focus-visible {
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 28%);
+}
+
+button.spot-thumb:focus-visible {
+  outline: 2px solid #333;
+  outline-offset: 2px;
+}
+
+.spot-thumb-frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #e6e6e6;
+}
+
+.spot-thumb-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  opacity: 0;
+}
+
+.spot-thumb-img.is-ready {
+  opacity: 1;
+}
+
+.spot-thumb-skel {
+  position: absolute;
+  inset: 0;
+  background: #e6e6e6;
+  animation: spot-thumb-pulse 1.2s ease-in-out infinite;
+}
+
+.spot-thumb-skel.is-error {
+  display: grid;
+  place-items: center;
+  animation: none;
+  color: rgb(0 0 0 / 40%);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+@keyframes spot-thumb-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.spot-thumb-count {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: inline-block;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 10%);
+  color: #333;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.spot-thumb-count[hidden] {
+  display: none;
 }
 </style>
