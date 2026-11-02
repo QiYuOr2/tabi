@@ -773,12 +773,79 @@ onBeforeUnmount(() => {
 }
 
 .maplibregl-popup.spot-popup .maplibregl-popup-content {
+  position: relative;
   padding: 0;
   border-radius: 4px;
-  box-shadow: 0 0 0 2px rgb(0 0 0 / 10%);
+  background: #fff;
+  box-shadow: none;
   color: #333;
   font-size: 12px;
   line-height: 20px;
+}
+
+/* 2px、10% 黑的外圈。底边正中留出三角缺口，改由小三角的描边接上，避免两条半透明边叠深。 */
+.maplibregl-popup.spot-popup .maplibregl-popup-content::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -2px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 10%);
+  pointer-events: none;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-image:
+    linear-gradient(#000 0 0), linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+  mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+  -webkit-mask-size:
+    100% calc(100% - 2px),
+    calc(50% - 14px) 2px,
+    calc(50% - 14px) 2px;
+  mask-size:
+    100% calc(100% - 2px),
+    calc(50% - 14px) 2px,
+    calc(50% - 14px) 2px;
+  -webkit-mask-position:
+    left top,
+    left bottom,
+    right bottom;
+  mask-position:
+    left top,
+    left bottom,
+    right bottom;
+}
+
+/* 向下的小三角：白三角盖住内侧，背后的 SVG 只画两条斜边和与浮窗底边相接的那一截，颜色、透明度、粗细与外圈相同。 */
+.maplibregl-popup.spot-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  position: relative;
+  border-top-color: transparent;
+}
+
+.maplibregl-popup.spot-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: -14px;
+  top: -10px;
+  width: 28px;
+  height: 12.828px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='12.828' viewBox='0 0 28 12.828'%3E%3Cpath fill='black' fill-opacity='0.1' d='M0 0L0 2L3.172 2L14 12.828L24.828 2L28 2L28 0L24 0L14 10L4 0Z'/%3E%3C/svg%3E")
+    no-repeat center / 100% 100%;
+  pointer-events: none;
+}
+
+.maplibregl-popup.spot-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  left: -10px;
+  top: -10px;
+  width: 0;
+  height: 0;
+  border-top: 10px solid #fff;
+  border-right: 10px solid transparent;
+  border-left: 10px solid transparent;
+  pointer-events: none;
 }
 
 .maplibregl-popup.spot-popup img {

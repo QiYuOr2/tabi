@@ -271,23 +271,51 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
       <p v-if="spot.takenAt" class="m-0">拍摄：{{ spot.takenAt.slice(0, 10) }}</p>
     </div>
 
-    <div class="flex flex-wrap justify-end gap-1.5 px-2.5 pt-2 pb-2.5">
+    <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 px-2.5 pt-1 pb-1">
       <a
         v-if="hasAnitabiLink"
         :href="`https://www.anitabi.cn/map?bangumiId=${spot.bangumiId}&pid=${spot.anitabiPointId}`"
         target="_blank"
-        rel="noopener"
-        class="inline-flex h-[29px] items-center whitespace-nowrap rounded border border-[#d8d8d8] bg-[#f4f4f4] px-2 text-[#333] no-underline hover:bg-[#ebebeb]"
+        rel="noopener noreferrer"
+        class="inline-flex min-h-9 items-center gap-1 whitespace-nowrap px-1 text-[#1864ab] no-underline hover:text-[#0f4c81] hover:underline focus-visible:underline"
       >
         在anitabi查看
+        <svg
+          class="h-3 w-3 shrink-0"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M15 3h6v6" />
+          <path d="M10 14 21 3" />
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+        </svg>
       </a>
       <a
         :href="googleMapsUrl"
         target="_blank"
         rel="noopener noreferrer"
-        class="inline-flex h-[29px] items-center whitespace-nowrap rounded border border-[#d8d8d8] bg-[#f4f4f4] px-2 text-[#333] no-underline hover:bg-[#ebebeb]"
+        class="inline-flex min-h-9 items-center gap-1 whitespace-nowrap px-1 text-[#1864ab] no-underline hover:text-[#0f4c81] hover:underline focus-visible:underline"
       >
         在谷歌地图查看
+        <svg
+          class="h-3 w-3 shrink-0"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M15 3h6v6" />
+          <path d="M10 14 21 3" />
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+        </svg>
       </a>
     </div>
 
