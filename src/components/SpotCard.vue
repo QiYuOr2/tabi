@@ -15,6 +15,12 @@ const index = ref(Math.min(Math.max(props.start, 0), Math.max(props.spots.length
 const spot = computed(() => props.spots[index.value] ?? props.spots[0]!);
 const color = computed(() => props.colors[index.value] ?? props.colors[0] ?? "#555");
 const total = computed(() => props.spots.length);
+const hasAnitabiLink = computed(
+  () => spot.value.anitabiPointId != null && spot.value.bangumiId != null,
+);
+const googleMapsUrl = computed(
+  () => `https://www.google.com/maps/search/?api=1&query=${spot.value.lat},${spot.value.lng}`,
+);
 
 const animeSrc = computed(() => imagePlan(spot.value.animeImage, "h360"));
 const animeFailed = ref(false);
@@ -205,14 +211,45 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
       >
     </p>
 
-    <a
-      v-if="spot.anitabiPointId && spot.bangumiId != null"
-      :href="`https://www.anitabi.cn/map?bangumiId=${spot.bangumiId}&pid=${spot.anitabiPointId}`"
-      target="_blank"
-      rel="noopener"
-      class="mt-1.5 flex h-[29px] items-center border-t border-[#ddd] px-2.5 text-[#333] no-underline hover:bg-black/5"
-    >
-      在 anitabi 查看此地标
-    </a>
+    <div class="spot-actions mt-1.5 border-t border-[#ddd]">
+      <div class="flex" :class="{ 'spot-actions-split': hasAnitabiLink }">
+        <a
+          v-if="hasAnitabiLink"
+          :href="`https://www.anitabi.cn/map?bangumiId=${spot.bangumiId}&pid=${spot.anitabiPointId}`"
+          target="_blank"
+          rel="noopener"
+          class="flex h-[29px] flex-auto items-center whitespace-nowrap px-2.5 text-[#333] no-underline hover:bg-black/5"
+        >
+          在 anitabi 查看此地标
+        </a>
+        <a
+          :href="googleMapsUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="flex h-[29px] items-center whitespace-nowrap px-2.5 text-[#333] no-underline hover:bg-black/5"
+          :class="hasAnitabiLink ? 'flex-auto border-l border-[#ddd]' : 'w-full'"
+        >
+          在谷歌地图查看
+        </a>
+      </div>
+    </div>
   </article>
 </template>
+
+<style scoped>
+.spot-actions {
+  container-type: inline-size;
+}
+
+/* 浮窗最宽 300px。两枚按钮放不下时改成上下排，避免文字挤出或被裁掉。 */
+@container (max-width: 272px) {
+  .spot-actions-split {
+    flex-direction: column;
+  }
+
+  .spot-actions-split a + a {
+    border-top: 1px solid #ddd;
+    border-left-width: 0;
+  }
+}
+</style>
