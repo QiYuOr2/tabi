@@ -3,7 +3,7 @@ import { LngLatBounds, Map as MlMap, Marker, NavigationControl, Popup } from "ma
 import { createApp, onBeforeUnmount, onMounted, ref, shallowRef, type App } from "vue";
 import { clusterByDistance, THUMB_GAP, THUMB_H, THUMB_W, type ScreenPoint } from "../lib/cluster";
 import { imagePlan, prefetchImage } from "../lib/images";
-import { MAP_STYLE_URL, ensureMapWorker, preferCjkLabels } from "../lib/map";
+import { MAP_STYLE_URL, ensureMapWorker, preferCjkLabels, simplifyBasemap } from "../lib/map";
 import { groupByAnime, spots } from "../lib/spots";
 import type { Spot } from "../types/spot";
 import SpotCard from "./SpotCard.vue";
@@ -557,7 +557,10 @@ onMounted(() => {
   });
   map.value = m;
   m.addControl(new NavigationControl(), "bottom-right");
-  m.on("style.load", () => preferCjkLabels(m));
+  m.on("style.load", () => {
+    simplifyBasemap(m);
+    preferCjkLabels(m);
+  });
   m.on("resize", () => {
     if (popup) {
       const width = popupMaxWidth(m);
