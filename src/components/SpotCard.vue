@@ -183,18 +183,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
             图片加载失败
           </div>
         </div>
-        <figcaption class="mt-1 flex h-5 items-center gap-1.5 text-black/55">
-          <span class="shrink-0">动画</span>
-          <a
-            v-if="spot.origin && spot.originURL"
-            :href="spot.originURL"
-            target="_blank"
-            rel="noopener"
-            class="min-w-0 truncate text-black/45 no-underline hover:underline"
-            >{{ spot.origin }}</a
-          >
-          <span v-else class="min-w-0 truncate text-black/45">{{ spot.origin || "anitabi" }}</span>
-        </figcaption>
+        <figcaption class="mt-1 flex h-5 items-center text-black/55">动画</figcaption>
       </figure>
       <figure class="m-0">
         <div class="relative">
@@ -241,6 +230,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
             <span class="i-lucide-zoom-in h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </figcaption>
+        <p v-if="spot.takenAt" class="m-0 mt-0.5 min-w-0 text-black/55">
+          拍摄：{{ spot.takenAt.slice(0, 10) }}
+        </p>
       </figure>
     </div>
 
@@ -266,10 +258,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
       </button>
     </div>
 
-    <div v-if="spot.note || spot.takenAt" class="space-y-0.5 px-2.5 pt-1.5 text-black/55">
-      <p v-if="spot.note" class="m-0">{{ spot.note }}</p>
-      <p v-if="spot.takenAt" class="m-0">拍摄：{{ spot.takenAt.slice(0, 10) }}</p>
-    </div>
+    <p v-if="spot.note" class="m-0 px-2.5 pt-1.5 text-black/55">{{ spot.note }}</p>
+    <p
+      v-if="spot.origin && spot.originURL"
+      class="m-0 flex flex-wrap gap-x-2.5 px-2.5 pt-1.5 text-black/55"
+    >
+      <a :href="spot.originURL" target="_blank" rel="noopener" class="text-black/75 hover:underline"
+        >截图来源：{{ spot.origin }}</a
+      >
+    </p>
 
     <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 px-2.5 pt-1 pb-1">
       <a
