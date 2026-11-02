@@ -1,4 +1,5 @@
 import {
+  LngLat,
   setWorkerUrl,
   type ExpressionSpecification,
   type FilterSpecification,
@@ -13,16 +14,12 @@ export const DEFAULT_MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liber
 
 export const MAP_STYLE_URL = import.meta.env.VITE_MAP_STYLE_URL?.trim() || DEFAULT_MAP_STYLE_URL;
 
-/** 西南、东北。可视范围限制在日本周边。 */
-export const MAP_MAX_BOUNDS: [[number, number], [number, number]] = [
-  [122.5, 23.5],
-  [150, 46.5],
-];
+/** 平面建筑。背景是 #f8f4f0，填充只深一点，轮廓再深一档。 */
+const BUILDING_FILL_COLOR = "#f1ece6";
+const BUILDING_OUTLINE_COLOR = "#e6dfd6";
 
-export const MAP_MIN_ZOOM = 5;
-
-/** 遮罩外环比 maxBounds 各边再外扩的度数。 */
-const MASK_PAD_DEGREES = 3;
+const MERCATOR_LIMIT = 85.051129;
+const TILE_SIZE = 512;
 
 const MASK_SOURCE_ID = "outside-japan";
 const MASK_LAYER_ID = "outside-japan-mask";
@@ -160,7 +157,12 @@ export function simplifyBasemap(map: Map) {
   }
   for (const layer of layers) {
     if (layer.type !== "fill" || !layer.id.toLowerCase().includes("building")) continue;
-    if (!map.getLayer(layer.id) || typeof layer.maxzoom !== "number") continue;
+    if (!map.getLayer(layer.id)) continue;
+    map.setPaintProperty(layer.id, "fill-color", BUILDING_FILL_COLOR);
+    if (map.getPaintProperty(layer.id, "fill-outline-color") != null) {
+      map.setPaintProperty(layer.id, "fill-outline-color", BUILDING_OUTLINE_COLOR);
+    }
+    if (typeof layer.maxzoom !== "number") continue;
     map.setLayerZoomRange(layer.id, layer.minzoom ?? 0, 24);
   }
   for (const id of ["poi_r1", "poi_r7", "poi_r20"]) keepClass(map, id, RAILWAY_CLASS);
@@ -178,16 +180,75 @@ export function ensureMapWorker() {
 }
 
 type Ring = [number, number][];
+type LngLatBoundsArray = [[number, number], [number, number]];
+
+/** 遮罩挖空范围的外接矩形。最小缩放要把它完整放进一屏。 */
+function overviewBounds(): LngLatBoundsArray {
+  let west = 180;
+  let south = 90;
+  let east = -180;
+  let north = -90;
+  for (const polygon of japanArea.coordinates) {
+    for (const point of polygon[0] as Ring) {
+      const [lng, lat] = point;
+      if (lng < west) west = lng;
+      if (lng > east) east = lng;
+      if (lat < south) south = lat;
+      if (lat > north) north = lat;
+    }
+  }
+  return [
+    [west, south],
+    [east, north],
+  ];
+}
+
+function mercatorY(lat: number): number {
+  const clamped = Math.min(MERCATOR_LIMIT, Math.max(-MERCATOR_LIMIT, lat));
+  const sine = Math.sin((clamped * Math.PI) / 180);
+  return 0.5 - Math.log((1 + sine) / (1 - sine)) / (4 * Math.PI);
+}
+
+function latFromMercatorY(y: number): number {
+  const n = Math.PI * (1 - 2 * y);
+  return (Math.atan(Math.sinh(n)) * 180) / Math.PI;
+}
+
+/**
+ * 按当前视口把最小缩放设成「一屏装下挖空范围」。
+ * maxBounds 比这一屏略大，避免缩放被旧的固定范围抬回去。
+ */
+export function syncMapOverview(map: Map) {
+  const width = map.getContainer().clientWidth;
+  const height = map.getContainer().clientHeight;
+  if (width < 32 || height < 32) return;
+
+  map.setMaxBounds(null);
+  const camera = map.cameraForBounds(overviewBounds(), { padding: 24 });
+  if (!camera || typeof camera.zoom !== "number" || !camera.center) return;
+
+  const minZoom = Math.min(camera.zoom, map.getMaxZoom());
+  map.setMinZoom(minZoom);
+
+  const center = LngLat.convert(camera.center);
+  const scale = TILE_SIZE * 2 ** minZoom;
+  const lngHalf = (width / 2 / scale) * 360 * 1.02;
+  const yHalf = (height / 2 / scale) * 1.02;
+  const centerY = mercatorY(center.lat);
+  map.setMaxBounds([
+    [center.lng - lngHalf, latFromMercatorY(centerY + yHalf)],
+    [center.lng + lngHalf, latFromMercatorY(centerY - yHalf)],
+  ]);
+}
 
 function outsideJapanMask(): GeoJSONSourceSpecification["data"] {
-  const [[west, south], [east, north]] = MAP_MAX_BOUNDS;
-  const pad = MASK_PAD_DEGREES;
+  // 外环盖住整个墨卡托范围。挖空的环保持原样。
   const outer: Ring = [
-    [west - pad, south - pad],
-    [east + pad, south - pad],
-    [east + pad, north + pad],
-    [west - pad, north + pad],
-    [west - pad, south - pad],
+    [-180, -MERCATOR_LIMIT],
+    [180, -MERCATOR_LIMIT],
+    [180, MERCATOR_LIMIT],
+    [-180, MERCATOR_LIMIT],
+    [-180, -MERCATOR_LIMIT],
   ];
   // 数据里的环是逆时针，挖洞需要相反方向。
   const holes = japanArea.coordinates.map((polygon) => [...polygon[0]].reverse() as Ring);
