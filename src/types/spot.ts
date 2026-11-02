@@ -19,6 +19,8 @@ export interface Spot {
   animeImage: string | null;
   /** 实拍图 URL，可为空 */
   photo: string | null;
+  /** 实拍缩略图。地图图钉用它，加载失败时回退到 photo。可为空 */
+  photoThumb?: string | null;
   /** 拍摄时间 ISO 8601，可为空 */
   takenAt: string | null;
   /** 坐标来源 */

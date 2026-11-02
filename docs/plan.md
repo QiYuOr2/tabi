@@ -32,6 +32,7 @@ interface Spot {
   lng: number;
   animeImage: string | null;
   photo: string | null;
+  photoThumb?: string | null;
   takenAt: string | null;
   source: "exif" | "anitabi" | "geocode" | "manual";
   anitabiPointId: string | null;

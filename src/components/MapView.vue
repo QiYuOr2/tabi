@@ -35,7 +35,7 @@ let popupApp: App | null = null;
 let selectedId: string | null = null;
 let layoutQueued = false;
 
-for (const s of spots) prefetchImage(imagePlan(s.animeImage, "h160"));
+for (const s of spots) prefetchImage(s.photoThumb ?? null);
 
 function closePopup() {
   selectedId = null;
@@ -221,8 +221,7 @@ function layoutPins() {
       rep.button.setAttribute("aria-label", label);
     }
     const img = rep.button.querySelector("img");
-    if (!img || img.classList.contains("is-ready"))
-      prefetchImage(imagePlan(rep.spot.animeImage, "h360"));
+    if (!img || img.classList.contains("is-ready")) warmPopup(rep.spot);
   }
 
   membersOf = nextMembers;
@@ -251,12 +250,10 @@ function onThumbClick(m: MlMap, pin: Pin) {
   m.fitBounds(bounds, { padding, maxZoom: CLUSTER_MAX_ZOOM, duration: 400 });
 }
 
-function warmPopup(pin: Pin, m: MlMap) {
-  prefetchImage(imagePlan(pin.spot.animeImage, "h360"));
-  const members = membersOf.get(pin.spot.id) ?? [pin];
-  const opensNow =
-    members.length <= 1 || spreadOf(members) < SAME_SPOT || m.getZoom() >= CLUSTER_MAX_ZOOM;
-  if (opensNow && pin.spot.photo) prefetchImage(pin.spot.photo);
+/** 缩略图已经在画面上时，把弹层要用的动画截图和实拍原图先拉下来。 */
+function warmPopup(spot: Spot) {
+  prefetchImage(imagePlan(spot.animeImage, "h360"));
+  if (spot.photo) prefetchImage(spot.photo);
 }
 
 function createThumb(spot: Spot) {
@@ -275,7 +272,9 @@ function createThumb(spot: Spot) {
   skel.className = "spot-thumb-skel";
   skel.setAttribute("aria-hidden", "true");
 
-  const src = imagePlan(spot.animeImage, "h160");
+  const primary = spot.photoThumb || null;
+  const fallback = spot.photo;
+  const src = primary || fallback;
   if (src) {
     const img = document.createElement("img");
     img.className = "spot-thumb-img";
@@ -283,23 +282,29 @@ function createThumb(spot: Spot) {
     img.draggable = false;
     img.referrerPolicy = "no-referrer";
     img.decoding = "async";
+    let usingFallback = !primary || primary === fallback;
     const ready = () => {
       img.classList.add("is-ready");
       skel.remove();
     };
-    img.addEventListener("load", () => {
+    const reveal = () => {
       ready();
-      // 小图出来之后再拉弹层用的 h360，避免和预览抢同一条慢源。
-      if (!button.classList.contains("is-hidden"))
-        prefetchImage(imagePlan(spot.animeImage, "h360"));
-    });
+      if (!button.classList.contains("is-hidden")) warmPopup(spot);
+    };
+    img.addEventListener("load", reveal);
     img.addEventListener("error", () => {
+      if (!usingFallback && fallback && fallback !== primary) {
+        usingFallback = true;
+        img.src = fallback;
+        if (img.complete && img.naturalWidth > 0) reveal();
+        return;
+      }
       skel.classList.add("is-error");
       skel.textContent = "无";
     });
     frame.append(img, skel);
     img.src = src;
-    if (img.complete && img.naturalWidth > 0) ready();
+    if (img.complete && img.naturalWidth > 0) reveal();
   } else {
     skel.classList.add("is-error");
     skel.textContent = "无";
@@ -360,7 +365,7 @@ onMounted(() => {
         ev.stopPropagation();
         onThumbClick(m, pin);
       });
-      const warm = () => warmPopup(pin, m);
+      const warm = () => warmPopup(pin.spot);
       // 地图在画布容器上听触摸。不拦住的话，点缩略图会被当成拖地图，手机上就打不开弹层。
       const keep = (ev: Event) => ev.stopPropagation();
       button.addEventListener("pointerdown", keep);
@@ -450,8 +455,8 @@ onBeforeUnmount(() => {
 button.spot-thumb {
   box-sizing: border-box;
   display: block;
-  width: 80px;
-  height: 45px;
+  width: 72px;
+  height: 54px;
   margin: 0;
   padding: 2px;
   border: 0;

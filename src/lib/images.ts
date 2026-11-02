@@ -1,6 +1,6 @@
 const PLAN = /([?&])plan=[^&]*/;
 
-/** anitabi 只提供 h160 和 h360。缩略图用 h160，弹层用 h360。其它地址原样返回。 */
+/** anitabi 只提供 h160 和 h360。弹层里的动画截图用 h360。其它地址原样返回。 */
 export function imagePlan(url: string | null, plan: "h160" | "h360"): string | null {
   if (!url) return null;
   if (!url.includes("image.anitabi.cn")) return url;

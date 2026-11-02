@@ -1,6 +1,6 @@
-/** 缩略图按钮尺寸。碰撞范围比它略大，避免贴在一起仍分成两枚。 */
-export const THUMB_W = 80;
-export const THUMB_H = 45;
+/** 实拍缩略图是 4:3，图钉外框大约 72×54。碰撞范围比它略大，避免贴在一起仍分成两枚。 */
+export const THUMB_W = 72;
+export const THUMB_H = 54;
 export const THUMB_GAP = 8;
 
 export interface ScreenPoint<T> {
