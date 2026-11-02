@@ -576,6 +576,9 @@ onMounted(() => {
     zoom: 5,
     minZoom: MAP_MIN_ZOOM,
     maxBounds: MAP_MAX_BOUNDS,
+    pitch: 0,
+    maxPitch: 0,
+    pitchWithRotate: false,
   });
   map.value = m;
   m.addControl(new NavigationControl(), "bottom-right");

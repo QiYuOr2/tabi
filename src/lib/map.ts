@@ -134,6 +134,7 @@ export function shouldHideBasemapLayer(layer: BasemapLayer): boolean {
   const id = layer.id;
   if (QUIET_BASEMAP_LAYER_SET.has(id)) return true;
   if (id.toLowerCase().includes("shield")) return true;
+  if (layer.type === "fill-extrusion") return true;
   if (isCountryLabelLayer(layer) || isCountryBoundaryLayer(layer)) return true;
   const sourceLayer = basemapSourceLayer(layer);
   return sourceLayer === "housenumber" || id.toLowerCase().includes("housenumber");
@@ -149,13 +150,18 @@ function keepClass(map: Map, id: string, clause: FilterSpecification) {
 /**
  * 加载完 OpenFreeMap 样式后收掉杂项，让巡礼图钉更显眼。
  * 保留城市和较大的区域名、铁路和车站、水体、公园绿地、道路线条，以及主干道名。
- * 丁目这一级从地名层拿掉。
+ * 丁目这一级从地名层拿掉。立体建筑关掉；平面建筑若有缩放上限，就放开到高缩放。
  */
 export function simplifyBasemap(map: Map) {
   const layers = map.getStyle()?.layers ?? [];
   for (const layer of layers) {
     if (!shouldHideBasemapLayer(layer) || !map.getLayer(layer.id)) continue;
     map.setLayoutProperty(layer.id, "visibility", "none");
+  }
+  for (const layer of layers) {
+    if (layer.type !== "fill" || !layer.id.toLowerCase().includes("building")) continue;
+    if (!map.getLayer(layer.id) || typeof layer.maxzoom !== "number") continue;
+    map.setLayerZoomRange(layer.id, layer.minzoom ?? 0, 24);
   }
   for (const id of ["poi_r1", "poi_r7", "poi_r20"]) keepClass(map, id, RAILWAY_CLASS);
   keepClass(map, "poi_transit", RAIL_CLASS);
