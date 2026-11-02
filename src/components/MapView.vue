@@ -89,29 +89,68 @@ function panPopupIntoView(m: MlMap, p: Popup) {
   else if (rect.right > maxRight) x = rect.right - maxRight;
   if (rect.top < minTop) y = rect.top - minTop;
   else if (rect.bottom > maxBottom) y = rect.bottom - maxBottom;
-  if (x !== 0 || y !== 0) m.panBy([x, y], { duration: 200 });
+  if (x !== 0 || y !== 0) {
+    m.panBy([x, y], { duration: 200 });
+    return true;
+  }
+  return false;
 }
 
 function schedulePan(m: MlMap, p: Popup) {
-  // 等弹层完成布局再量尺寸，否则宽度还是 0，平移不会发生。
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      if (popup === p) panPopupIntoView(m, p);
+  // 弹层可能晚一帧才摆到锚点上。平移结束后再量一次，把剩下的溢出补掉。
+  let tries = 0;
+  const run = () => {
+    if (popup !== p || tries >= 4) return;
+    tries += 1;
+    if (!panPopupIntoView(m, p)) return;
+    m.once("moveend", () => {
+      requestAnimationFrame(run);
     });
-  });
+  };
+  requestAnimationFrame(() => requestAnimationFrame(run));
+}
+
+/** 图例里仍显示、且彼此落在同一地点阈值内的记录。按 id 稳定排序。 */
+function samePlaceSpots(spot: Spot): Spot[] {
+  const visible = pins.filter((pin) => !hidden.value.has(pin.group)).map((pin) => pin.spot);
+  const parent = visible.map((_, i) => i);
+  const find = (i: number): number => {
+    let p = i;
+    while (parent[p] !== p) p = parent[p]!;
+    return p;
+  };
+  const near = (a: Spot, b: Spot) =>
+    Math.max(Math.abs(a.lat - b.lat), Math.abs(a.lng - b.lng)) < SAME_SPOT;
+  for (let i = 0; i < visible.length; i++) {
+    for (let j = i + 1; j < visible.length; j++) {
+      if (!near(visible[i]!, visible[j]!)) continue;
+      const pa = find(i);
+      const pb = find(j);
+      if (pa !== pb) parent[pa] = pb;
+    }
+  }
+  const idx = visible.findIndex((item) => item.id === spot.id);
+  if (idx < 0) return [spot];
+  const root = find(idx);
+  return visible.filter((_, i) => find(i) === root).sort((a, b) => (a.id < b.id ? -1 : 1));
 }
 
 function openPopup(m: MlMap, spot: Spot) {
   closePopup();
+  const pages = samePlaceSpots(spot);
+  const start = Math.max(
+    0,
+    pages.findIndex((page) => page.id === spot.id),
+  );
   selectedId = spot.id;
-  prefetchImage(imagePlan(spot.animeImage, "h360"));
-  if (spot.photo) prefetchImage(spot.photo);
+  for (const page of pages) warmPopup(page);
   const host = document.createElement("div");
   // 先定宽，避免图片固有尺寸把弹层撑开后，平移按旧宽度算偏。
   host.style.width = popupMaxWidth(m);
   popupApp = createApp(SpotCard, {
-    spot,
-    color: colorOf(spot),
+    spots: pages,
+    start,
+    colors: pages.map((page) => colorOf(page)),
     onClose: () => closePopup(),
   });
   popupApp.mount(host);
@@ -207,12 +246,15 @@ function layoutPins() {
     for (const pin of items) setShown(pin, pin === rep);
 
     const count = items.length;
+    const samePlace = spreadOf(items) < SAME_SPOT;
     if (count > 1) {
       rep.badge.hidden = false;
       rep.badge.textContent = String(count);
-      const label = `${rep.spot.animeName} · ${count} 个地点`;
+      const label = samePlace
+        ? `${rep.spot.animeName} · ${count} 张照片`
+        : `${rep.spot.animeName} · ${count} 个地点`;
       rep.button.title = label;
-      rep.button.setAttribute("aria-label", `${label}，点击放大`);
+      rep.button.setAttribute("aria-label", `${label}，${samePlace ? "点击查看" : "点击放大"}`);
     } else {
       rep.badge.hidden = true;
       rep.badge.textContent = "";
@@ -221,7 +263,9 @@ function layoutPins() {
       rep.button.setAttribute("aria-label", label);
     }
     const img = rep.button.querySelector("img");
-    if (!img || img.classList.contains("is-ready")) warmPopup(rep.spot);
+    if (!img || img.classList.contains("is-ready")) {
+      for (const page of samePlaceSpots(rep.spot)) warmPopup(page);
+    }
   }
 
   membersOf = nextMembers;

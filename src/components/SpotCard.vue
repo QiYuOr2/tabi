@@ -1,11 +1,21 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { imagePlan } from "../lib/images";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { imagePlan, prefetchImage } from "../lib/images";
 import type { Spot } from "../types/spot";
 
-const props = defineProps<{ spot: Spot; color: string; onClose: () => void }>();
+const props = defineProps<{
+  spots: Spot[];
+  start: number;
+  colors: string[];
+  onClose: () => void;
+}>();
 
-const animeSrc = computed(() => imagePlan(props.spot.animeImage, "h360"));
+const index = ref(Math.min(Math.max(props.start, 0), Math.max(props.spots.length - 1, 0)));
+const spot = computed(() => props.spots[index.value] ?? props.spots[0]!);
+const color = computed(() => props.colors[index.value] ?? props.colors[0] ?? "#555");
+const total = computed(() => props.spots.length);
+
+const animeSrc = computed(() => imagePlan(spot.value.animeImage, "h360"));
 const animeFailed = ref(false);
 const animeLoaded = ref(false);
 const photoFailed = ref(false);
@@ -17,10 +27,69 @@ const SOURCE_LABEL: Record<Spot["source"], string> = {
   geocode: "地理编码",
   manual: "手动标注",
 };
+
+function warm(i: number) {
+  const page = props.spots[i];
+  if (!page) return;
+  prefetchImage(imagePlan(page.animeImage, "h360"));
+  if (page.photo) prefetchImage(page.photo);
+}
+
+function show(i: number) {
+  if (i === index.value || i < 0 || i >= props.spots.length) return;
+  animeFailed.value = false;
+  animeLoaded.value = false;
+  photoFailed.value = false;
+  photoLoaded.value = false;
+  index.value = i;
+  warm(i);
+}
+
+function onKey(ev: KeyboardEvent) {
+  if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  show(index.value + (ev.key === "ArrowRight" ? 1 : -1));
+}
+
+let swipeX = 0;
+let swipeY = 0;
+let tracking = false;
+
+function onPointerDown(ev: PointerEvent) {
+  if (ev.pointerType === "mouse" && ev.button !== 0) return;
+  const target = ev.target as HTMLElement | null;
+  if (target?.closest("button, a")) return;
+  tracking = true;
+  swipeX = ev.clientX;
+  swipeY = ev.clientY;
+  ev.stopPropagation();
+  ev.preventDefault();
+  (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+}
+
+function onPointerUp(ev: PointerEvent) {
+  if (!tracking) return;
+  tracking = false;
+  const dx = ev.clientX - swipeX;
+  const dy = ev.clientY - swipeY;
+  if (Math.abs(dx) < 36 || Math.abs(dx) < Math.abs(dy)) return;
+  show(index.value + (dx < 0 ? 1 : -1));
+}
+
+onMounted(() => window.addEventListener("keydown", onKey, true));
+onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 </script>
 
 <template>
-  <article class="relative text-xs leading-5 text-[#333]">
+  <article
+    class="relative text-xs leading-5 text-[#333]"
+    @pointerdown="onPointerDown"
+    @pointerup="onPointerUp"
+    @pointercancel="tracking = false"
+    @touchstart.stop
+    @touchmove.prevent.stop
+  >
     <header class="flex items-start gap-1.5 px-2.5 pt-2 pr-7">
       <span class="mt-[6px] h-2 w-2 shrink-0 rounded-full" :style="{ background: color }" />
       <div class="min-w-0 flex-1">
@@ -37,56 +106,88 @@ const SOURCE_LABEL: Record<Spot["source"], string> = {
       </button>
     </header>
 
-    <div class="grid grid-cols-2 gap-1 px-2.5 pt-1.5">
-      <figure class="relative m-0">
-        <img
-          v-if="animeSrc && !animeFailed"
-          :src="animeSrc"
-          alt="动画截图"
-          class="aspect-video w-full rounded-sm bg-[#f2f2f2] object-cover"
-          :class="animeLoaded ? 'opacity-100' : 'opacity-0'"
-          referrerpolicy="no-referrer"
-          decoding="async"
-          fetchpriority="high"
-          @load="animeLoaded = true"
-          @error="animeFailed = true"
-        />
-        <div
-          v-if="animeSrc && !animeFailed && !animeLoaded"
-          class="pointer-events-none absolute inset-0 animate-pulse rounded-sm bg-[#e6e6e6]"
-        />
-        <div
-          v-else-if="!animeSrc || animeFailed"
-          class="grid aspect-video w-full place-items-center rounded-sm bg-[#f2f2f2] text-black/40"
-        >
-          {{ animeSrc ? "图片加载失败" : "暂无截图" }}
+    <div
+      :key="spot.id"
+      class="grid gap-1 px-2.5 pt-1.5"
+      :class="animeSrc ? 'grid-cols-2' : 'grid-cols-1'"
+    >
+      <figure v-if="animeSrc" class="m-0">
+        <div class="relative">
+          <img
+            v-if="!animeFailed"
+            :src="animeSrc"
+            alt="动画截图"
+            class="aspect-video w-full rounded-sm bg-[#f2f2f2] object-cover"
+            :class="animeLoaded ? 'opacity-100' : 'opacity-0'"
+            referrerpolicy="no-referrer"
+            decoding="async"
+            draggable="false"
+            fetchpriority="high"
+            @load="animeLoaded = true"
+            @error="animeFailed = true"
+          />
+          <div
+            v-if="!animeFailed && !animeLoaded"
+            class="pointer-events-none absolute inset-0 animate-pulse rounded-sm bg-[#e6e6e6]"
+          />
+          <div
+            v-else-if="animeFailed"
+            class="grid aspect-video w-full place-items-center rounded-sm bg-[#f2f2f2] text-black/40"
+          >
+            图片加载失败
+          </div>
         </div>
         <figcaption class="mt-0.5 text-black/55">动画</figcaption>
       </figure>
-      <figure class="relative m-0">
-        <img
-          v-if="spot.photo && !photoFailed"
-          :src="spot.photo"
-          alt="实拍"
-          class="aspect-video w-full rounded-sm bg-[#f2f2f2] object-cover"
-          :class="photoLoaded ? 'opacity-100' : 'opacity-0'"
-          referrerpolicy="no-referrer"
-          decoding="async"
-          @load="photoLoaded = true"
-          @error="photoFailed = true"
-        />
-        <div
-          v-if="spot.photo && !photoFailed && !photoLoaded"
-          class="pointer-events-none absolute inset-0 animate-pulse rounded-sm bg-[#e6e6e6]"
-        />
-        <div
-          v-else-if="!spot.photo || photoFailed"
-          class="grid aspect-video w-full place-items-center rounded-sm bg-[#f2f2f2] text-black/40"
-        >
-          {{ spot.photo ? "图片加载失败" : "暂无实拍" }}
+      <figure class="m-0">
+        <div class="relative">
+          <img
+            v-if="spot.photo && !photoFailed"
+            :src="spot.photo"
+            alt="实拍"
+            class="aspect-video w-full rounded-sm bg-[#f2f2f2] object-cover"
+            :class="photoLoaded ? 'opacity-100' : 'opacity-0'"
+            referrerpolicy="no-referrer"
+            decoding="async"
+            draggable="false"
+            @load="photoLoaded = true"
+            @error="photoFailed = true"
+          />
+          <div
+            v-if="spot.photo && !photoFailed && !photoLoaded"
+            class="pointer-events-none absolute inset-0 animate-pulse rounded-sm bg-[#e6e6e6]"
+          />
+          <div
+            v-else-if="!spot.photo || photoFailed"
+            class="grid aspect-video w-full place-items-center rounded-sm bg-[#f2f2f2] text-black/40"
+          >
+            {{ spot.photo ? "图片加载失败" : "暂无实拍" }}
+          </div>
         </div>
         <figcaption class="mt-0.5 text-black/55">实拍</figcaption>
       </figure>
+    </div>
+
+    <div v-if="total > 1" class="mt-1 flex items-center px-1">
+      <button
+        type="button"
+        class="h-[29px] w-[29px] shrink-0 rounded border-0 bg-transparent p-0 text-lg leading-[29px] text-[#333] hover:bg-black/5 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
+        aria-label="上一张"
+        :disabled="index === 0"
+        @click="show(index - 1)"
+      >
+        ‹
+      </button>
+      <span class="min-w-0 flex-1 text-center text-black/55">{{ index + 1 }} / {{ total }}</span>
+      <button
+        type="button"
+        class="h-[29px] w-[29px] shrink-0 rounded border-0 bg-transparent p-0 text-lg leading-[29px] text-[#333] hover:bg-black/5 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
+        aria-label="下一张"
+        :disabled="index === total - 1"
+        @click="show(index + 1)"
+      >
+        ›
+      </button>
     </div>
 
     <p class="m-0 flex flex-wrap gap-x-2.5 px-2.5 pt-1.5 text-black/55">
