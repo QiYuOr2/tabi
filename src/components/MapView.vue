@@ -613,37 +613,34 @@ onBeforeUnmount(() => {
     >
       <h1 class="m-0 px-2.5 pt-1.5 font-semibold">巡礼地图</h1>
       <ul class="m-0 list-none p-1">
-        <li v-for="g in groups" :key="g.key" class="flex items-center gap-0.5 pr-0.5">
-          <span
-            class="ml-1.5 h-2 w-2 shrink-0 rounded-full"
-            :class="{ 'opacity-40': hidden.has(g.key) }"
-            :style="{ background: g.color }"
-          />
-          <span class="min-w-0 flex-1 truncate" :class="{ 'opacity-40': hidden.has(g.key) }">{{
-            g.animeName
-          }}</span>
-          <span class="shrink-0 text-black/45" :class="{ 'opacity-40': hidden.has(g.key) }">{{
-            g.spots.length
-          }}</span>
+        <li
+          v-for="g in groups"
+          :key="g.key"
+          class="flex items-center"
+          :class="{ 'opacity-40': hidden.has(g.key) }"
+        >
+          <span class="ml-1.5 h-2 w-2 shrink-0 rounded-full" :style="{ background: g.color }" />
+          <span class="min-w-0 flex-1 truncate px-1.5">{{ g.animeName }}</span>
+          <span class="shrink-0 pr-0.5 text-black/45">{{ g.spots.length }}</span>
           <button
             type="button"
-            class="grid h-9 w-9 shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-[#333] hover:bg-black/5"
+            class="grid h-[29px] w-[29px] shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-black/45 hover:bg-black/5 hover:text-[#333]"
             :aria-label="`定位到${g.animeName}`"
             :title="`定位到${g.animeName}`"
             @click="focusGroup(g.key)"
           >
-            <span class="i-lucide-locate-fixed h-[18px] w-[18px]" aria-hidden="true" />
+            <span class="i-lucide-locate-fixed h-4 w-4" aria-hidden="true" />
           </button>
           <button
             type="button"
-            class="grid h-9 w-9 shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-[#333] hover:bg-black/5"
+            class="mr-0.5 grid h-[29px] w-[29px] shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-black/45 hover:bg-black/5 hover:text-[#333]"
             :aria-label="hidden.has(g.key) ? `显示${g.animeName}` : `隐藏${g.animeName}`"
             :title="hidden.has(g.key) ? `显示${g.animeName}` : `隐藏${g.animeName}`"
             :aria-pressed="hidden.has(g.key) ? 'false' : 'true'"
             @click="toggleGroup(g.key)"
           >
             <span
-              class="h-[18px] w-[18px]"
+              class="h-4 w-4"
               :class="hidden.has(g.key) ? 'i-lucide-eye-off' : 'i-lucide-eye'"
               aria-hidden="true"
             />
