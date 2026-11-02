@@ -191,6 +191,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
       </button>
     </div>
 
+    <p v-if="spot.note" class="m-0 px-2.5 pt-1.5 text-black/55">{{ spot.note }}</p>
     <p class="m-0 flex flex-wrap gap-x-2.5 px-2.5 pt-1.5 text-black/55">
       <span>坐标：{{ SOURCE_LABEL[spot.source] }}</span>
       <span v-if="spot.takenAt">拍摄：{{ spot.takenAt.slice(0, 10) }}</span>
