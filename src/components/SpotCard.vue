@@ -1,8 +1,15 @@
 <script setup lang="ts">
+import { computed, ref } from "vue";
+import { imagePlan } from "../lib/images";
 import type { Spot } from "../types/spot";
 
-defineProps<{ spot: Spot; color: string }>();
-defineEmits<{ close: [] }>();
+const props = defineProps<{ spot: Spot; color: string; onClose: () => void }>();
+
+const animeSrc = computed(() => imagePlan(props.spot.animeImage, "h360"));
+const animeFailed = ref(false);
+const animeLoaded = ref(false);
+const photoFailed = ref(false);
+const photoLoaded = ref(false);
 
 const SOURCE_LABEL: Record<Spot["source"], string> = {
   exif: "照片 EXIF",
@@ -13,61 +20,76 @@ const SOURCE_LABEL: Record<Spot["source"], string> = {
 </script>
 
 <template>
-  <article
-    class="absolute z-10 left-3 right-3 bottom-3 sm:left-auto sm:right-4 sm:top-4 sm:bottom-auto sm:w-96 max-h-[80vh] overflow-auto rounded-xl bg-white/95 shadow-xl backdrop-blur text-gray-800"
-  >
-    <header class="flex items-start gap-2 p-4 pb-2">
-      <span class="mt-1.5 h-3 w-3 shrink-0 rounded-full" :style="{ background: color }" />
+  <article class="relative text-xs leading-5 text-[#333]">
+    <header class="flex items-start gap-1.5 px-2.5 pt-2 pr-7">
+      <span class="mt-[6px] h-2 w-2 shrink-0 rounded-full" :style="{ background: color }" />
       <div class="min-w-0 flex-1">
-        <p class="text-xs text-gray-500">{{ spot.animeName }}</p>
-        <h2 class="text-base font-semibold leading-snug">{{ spot.pointName }}</h2>
+        <p class="m-0 text-black/55">{{ spot.animeName }}</p>
+        <h2 class="m-0 font-semibold leading-5">{{ spot.pointName }}</h2>
       </div>
       <button
-        class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+        type="button"
+        class="absolute top-0 right-0 h-[29px] w-[29px] border-0 bg-transparent p-0 text-lg leading-[29px] text-[#333] hover:bg-black/5"
         aria-label="关闭"
-        @click="$emit('close')"
+        @click="onClose"
       >
-        ✕
+        ×
       </button>
     </header>
 
-    <div class="grid grid-cols-2 gap-2 px-4">
-      <figure class="m-0">
+    <div class="grid grid-cols-2 gap-1 px-2.5 pt-1.5">
+      <figure class="relative m-0">
         <img
-          v-if="spot.animeImage"
-          :src="spot.animeImage"
+          v-if="animeSrc && !animeFailed"
+          :src="animeSrc"
           alt="动画截图"
-          class="aspect-video w-full rounded object-cover bg-gray-100"
-          loading="lazy"
+          class="aspect-video w-full rounded-sm bg-[#f2f2f2] object-cover"
+          :class="animeLoaded ? 'opacity-100' : 'opacity-0'"
           referrerpolicy="no-referrer"
+          decoding="async"
+          fetchpriority="high"
+          @load="animeLoaded = true"
+          @error="animeFailed = true"
         />
         <div
-          v-else
-          class="aspect-video w-full rounded bg-gray-100 grid place-items-center text-xs text-gray-400"
+          v-if="animeSrc && !animeFailed && !animeLoaded"
+          class="pointer-events-none absolute inset-0 animate-pulse rounded-sm bg-[#e6e6e6]"
+        />
+        <div
+          v-else-if="!animeSrc || animeFailed"
+          class="grid aspect-video w-full place-items-center rounded-sm bg-[#f2f2f2] text-black/40"
         >
-          暂无截图
+          {{ animeSrc ? "图片加载失败" : "暂无截图" }}
         </div>
-        <figcaption class="mt-1 text-xs text-gray-500">动画</figcaption>
+        <figcaption class="mt-0.5 text-black/55">动画</figcaption>
       </figure>
-      <figure class="m-0">
+      <figure class="relative m-0">
         <img
-          v-if="spot.photo"
+          v-if="spot.photo && !photoFailed"
           :src="spot.photo"
           alt="实拍"
-          class="aspect-video w-full rounded object-cover bg-gray-100"
-          loading="lazy"
+          class="aspect-video w-full rounded-sm bg-[#f2f2f2] object-cover"
+          :class="photoLoaded ? 'opacity-100' : 'opacity-0'"
+          referrerpolicy="no-referrer"
+          decoding="async"
+          @load="photoLoaded = true"
+          @error="photoFailed = true"
         />
         <div
-          v-else
-          class="aspect-video w-full rounded bg-gray-100 grid place-items-center text-xs text-gray-400"
+          v-if="spot.photo && !photoFailed && !photoLoaded"
+          class="pointer-events-none absolute inset-0 animate-pulse rounded-sm bg-[#e6e6e6]"
+        />
+        <div
+          v-else-if="!spot.photo || photoFailed"
+          class="grid aspect-video w-full place-items-center rounded-sm bg-[#f2f2f2] text-black/40"
         >
-          暂无实拍
+          {{ spot.photo ? "图片加载失败" : "暂无实拍" }}
         </div>
-        <figcaption class="mt-1 text-xs text-gray-500">实拍</figcaption>
+        <figcaption class="mt-0.5 text-black/55">实拍</figcaption>
       </figure>
     </div>
 
-    <footer class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-xs text-gray-500">
+    <p class="m-0 flex flex-wrap gap-x-2.5 px-2.5 pt-1.5 text-black/55">
       <span>坐标：{{ SOURCE_LABEL[spot.source] }}</span>
       <span v-if="spot.takenAt">拍摄：{{ spot.takenAt.slice(0, 10) }}</span>
       <a
@@ -75,20 +97,19 @@ const SOURCE_LABEL: Record<Spot["source"], string> = {
         :href="spot.originURL"
         target="_blank"
         rel="noopener"
-        class="text-blue-600 hover:underline"
+        class="text-black/75 hover:underline"
         >截图来源：{{ spot.origin }}</a
       >
-      <a
-        v-if="spot.bangumiId"
-        :href="`https://anitabi.cn/map?bangumiId=${spot.bangumiId}`"
-        target="_blank"
-        rel="noopener"
-        class="text-blue-600 hover:underline"
-        >anitabi</a
-      >
-      <span v-if="spot.example" class="rounded bg-amber-100 px-1.5 py-0.5 text-amber-700"
-        >示例数据</span
-      >
-    </footer>
+    </p>
+
+    <a
+      v-if="spot.anitabiPointId && spot.bangumiId != null"
+      :href="`https://www.anitabi.cn/map?bangumiId=${spot.bangumiId}&pid=${spot.anitabiPointId}`"
+      target="_blank"
+      rel="noopener"
+      class="mt-1.5 flex h-[29px] items-center border-t border-[#ddd] px-2.5 text-[#333] no-underline hover:bg-black/5"
+    >
+      在 anitabi 查看此地标
+    </a>
   </article>
 </template>

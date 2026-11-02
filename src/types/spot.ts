@@ -19,6 +19,8 @@ export interface Spot {
   animeImage: string | null;
   /** 实拍图 URL，可为空 */
   photo: string | null;
+  /** 实拍缩略图。地图图钉用它，加载失败时回退到 photo。可为空 */
+  photoThumb?: string | null;
   /** 拍摄时间 ISO 8601，可为空 */
   takenAt: string | null;
   /** 坐标来源 */
@@ -28,8 +30,6 @@ export interface Spot {
   /** 截图来源署名（anitabi 要求标注 origin 并可跳转 originURL），可选 */
   origin?: string | null;
   originURL?: string | null;
-  /** 示例数据标记，正式数据不写或为 false */
-  example?: boolean;
 }
 
 /** import-photos 产出的待定位记录（没有 GPS） */

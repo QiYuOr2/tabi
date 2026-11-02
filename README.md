@@ -32,7 +32,7 @@ pnpm exec vp check           # 格式 + lint + 类型检查
 
 ## 数据
 
-地点数据在 `src/data/spots.json`，类型定义在 `src/types/spot.ts`。现在的 3 条是示例（`"example": true`），坐标来自 anitabi。
+地点数据在 `src/data/spots.json`，类型定义在 `src/types/spot.ts`。
 
 `source` 表示坐标来源：`exif`（照片自带 GPS）、`anitabi`（匹配 anitabi 地标）、`geocode`（地理编码）、`manual`（手动标注）。
 
