@@ -46,7 +46,18 @@ node scripts/import-photos.ts ./photos/2026-05 --anime 吹响吧！上低音号 
 # 在 anitabi 上按作品 + 地点名模糊匹配，输出候选和坐标
 node scripts/match-anitabi.ts 115908 宇治橋
 node scripts/match-anitabi.ts 上低音号 京都音乐厅 --top 3 --json
+
+# 缩图并去掉 EXIF，输出 blog-image 用的大图和缩略图
+pnpm photos:process -- ./photos --bangumi 100444 DSC001.jpg=51i51ynk8
+pnpm photos:process -- --spots photos/imported-spots.json --bangumi 100444
+pnpm photos:process -- --map photos/map.json
 ```
+
+`process-photos` 会先读原图的 GPS 和 `DateTimeOriginal`（和 `import-photos` 同一套逻辑），再按 EXIF 方向转正。大图最长边 1280、JPEG 质量 82；缩略图从大图再缩到最长边 320、质量 78。都不放大，渐进式，mozjpeg，sRGB，去掉全部元数据。写完会再检查输出里没有 EXIF/GPS。
+
+输出名优先用命令行的 `原文件名=输出名` 和 `--map`，否则用 `--spots` 里的 `anitabiPointId`，没有就用 spot id。未写 `--spots` 时，如果 `photos/imported-spots.json` 存在会自动读。`--map` 的格式是 `{ "bangumiId": 100444, "files": { "DSC001.jpg": "51i51ynk8" } }`。
+
+文件写到 `dist-photos/<bangumiId>/<输出名>.jpg` 和 `dist-photos/<bangumiId>/thumb/<输出名>.jpg`（`dist-photos/` 不进仓库）。终端会打印 jsDelivr 地址，以及可以填进 `spots.json` 的 `photo` / `photoThumb`。处理前读到的 GPS 和拍摄时间写在 `dist-photos/capture.json`。目录里对不上输出名的照片会跳过，命令以非 0 退出。
 
 脚本不会改 `src/data/spots.json`，确认结果后再手动合并。原图放在 `photos/`，已被 git 忽略。
 

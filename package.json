@@ -8,7 +8,8 @@
     "build": "vue-tsc -b && vp build",
     "preview": "vp preview",
     "import-photos": "node scripts/import-photos.ts",
-    "match": "node scripts/match-anitabi.ts"
+    "match": "node scripts/match-anitabi.ts",
+    "photos:process": "node scripts/process-photos.ts"
   },
   "dependencies": {
     "maplibre-gl": "^6.16.0",
@@ -20,6 +21,7 @@
     "@vitejs/plugin-vue": "^6.0.10",
     "@vue/tsconfig": "^0.9.1",
     "exifr": "^7.1.3",
+    "sharp": "^0.35.5",
     "typescript": "~6.0.3",
     "unocss": "^66.12.0",
     "vite": "catalog:",
