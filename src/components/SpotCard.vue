@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { imagePlan, prefetchImage } from "../lib/images";
+import { workName } from "../lib/spots";
 import type { Spot } from "../types/spot";
 
 const props = defineProps<{
@@ -93,7 +94,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
     <header class="flex items-start gap-1.5 px-2.5 pt-2 pr-7">
       <span class="mt-[6px] h-2 w-2 shrink-0 rounded-full" :style="{ background: color }" />
       <div class="min-w-0 flex-1">
-        <p class="m-0 text-black/55">{{ spot.animeName }}</p>
+        <p class="m-0 text-black/55">{{ workName(spot) }}</p>
         <h2 class="m-0 font-semibold leading-5">{{ spot.pointName }}</h2>
       </div>
       <button
