@@ -31,13 +31,6 @@ const lightbox = ref(false);
 const lightboxFailed = ref(false);
 const canZoomPhoto = computed(() => Boolean(spot.value.photo) && !photoFailed.value);
 
-const SOURCE_LABEL: Record<Spot["source"], string> = {
-  exif: "照片 EXIF",
-  anitabi: "anitabi 匹配",
-  geocode: "地理编码",
-  manual: "手动标注",
-};
-
 function warm(i: number) {
   const page = props.spots[i];
   if (!page) return;
@@ -161,7 +154,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 
     <div
       :key="spot.id"
-      class="grid gap-1 px-2.5 pt-1.5"
+      class="grid gap-1.5 px-2.5 pt-1.5"
       :class="animeSrc ? 'grid-cols-2' : 'grid-cols-1'"
     >
       <figure v-if="animeSrc" class="m-0">
@@ -190,7 +183,18 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
             图片加载失败
           </div>
         </div>
-        <figcaption class="mt-0.5 text-black/55">动画</figcaption>
+        <figcaption class="mt-1 flex h-5 items-center gap-1.5 text-black/55">
+          <span class="shrink-0">动画</span>
+          <a
+            v-if="spot.origin && spot.originURL"
+            :href="spot.originURL"
+            target="_blank"
+            rel="noopener"
+            class="min-w-0 truncate text-black/45 no-underline hover:underline"
+            >{{ spot.origin }}</a
+          >
+          <span v-else class="min-w-0 truncate text-black/45">{{ spot.origin || "anitabi" }}</span>
+        </figcaption>
       </figure>
       <figure class="m-0">
         <div class="relative">
@@ -224,7 +228,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
             {{ spot.photo ? "图片加载失败" : "暂无实拍" }}
           </div>
         </div>
-        <figcaption class="mt-0.5 flex h-5 items-center text-black/55">
+        <figcaption class="mt-1 flex h-5 items-center text-black/55">
           <span>实拍</span>
           <button
             v-if="canZoomPhoto"
@@ -262,52 +266,56 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
       </button>
     </div>
 
-    <p v-if="spot.note" class="m-0 px-2.5 pt-1.5 text-black/55">{{ spot.note }}</p>
-    <p class="m-0 flex flex-wrap gap-x-2.5 px-2.5 pt-1.5 text-black/55">
-      <span>坐标：{{ SOURCE_LABEL[spot.source] }}</span>
-      <span v-if="spot.takenAt">拍摄：{{ spot.takenAt.slice(0, 10) }}</span>
-      <a
-        v-if="spot.origin && spot.originURL"
-        :href="spot.originURL"
-        target="_blank"
-        rel="noopener"
-        class="text-black/75 hover:underline"
-        >截图来源：{{ spot.origin }}</a
-      >
-    </p>
+    <div v-if="spot.note || spot.takenAt" class="space-y-0.5 px-2.5 pt-1.5 text-black/55">
+      <p v-if="spot.note" class="m-0">{{ spot.note }}</p>
+      <p v-if="spot.takenAt" class="m-0">拍摄：{{ spot.takenAt.slice(0, 10) }}</p>
+    </div>
 
-    <div class="mt-1.5 border-t border-[#ddd]">
-      <div v-if="hasAnitabiLink" class="flex">
-        <a
-          :href="`https://www.anitabi.cn/map?bangumiId=${spot.bangumiId}&pid=${spot.anitabiPointId}`"
-          target="_blank"
-          rel="noopener"
-          class="flex h-[29px] min-w-0 flex-1 items-center justify-center whitespace-nowrap text-[#333] no-underline hover:bg-black/5"
-        >
-          在anitabi查看
-        </a>
-        <span
-          class="w-px shrink-0 self-stretch bg-[#ddd]"
-          data-action-divider
-          aria-hidden="true"
-        ></span>
-        <a
-          :href="googleMapsUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="flex h-[29px] min-w-0 flex-1 items-center justify-center whitespace-nowrap text-[#333] no-underline hover:bg-black/5"
-        >
-          在谷歌地图查看
-        </a>
-      </div>
+    <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 px-2.5 pt-1 pb-1">
       <a
-        v-else
+        v-if="hasAnitabiLink"
+        :href="`https://www.anitabi.cn/map?bangumiId=${spot.bangumiId}&pid=${spot.anitabiPointId}`"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="inline-flex min-h-9 items-center gap-1 whitespace-nowrap px-1 text-[#1864ab] no-underline hover:text-[#0f4c81] hover:underline focus-visible:underline"
+      >
+        在anitabi查看
+        <svg
+          class="h-3 w-3 shrink-0"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M15 3h6v6" />
+          <path d="M10 14 21 3" />
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+        </svg>
+      </a>
+      <a
         :href="googleMapsUrl"
         target="_blank"
         rel="noopener noreferrer"
-        class="flex h-[29px] w-full items-center whitespace-nowrap px-2.5 text-[#333] no-underline hover:bg-black/5"
+        class="inline-flex min-h-9 items-center gap-1 whitespace-nowrap px-1 text-[#1864ab] no-underline hover:text-[#0f4c81] hover:underline focus-visible:underline"
       >
         在谷歌地图查看
+        <svg
+          class="h-3 w-3 shrink-0"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M15 3h6v6" />
+          <path d="M10 14 21 3" />
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+        </svg>
       </a>
     </div>
 
