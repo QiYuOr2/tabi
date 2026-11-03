@@ -1255,14 +1255,14 @@
     "pointName": "洗足站 售票机",
     "lat": 35.610437,
     "lng": 139.694248,
-    "animeImage": "https://image.anitabi.cn/user/1139/bangumi/394260/points/v70i7zltv-1746148166651.jpg?plan=h360",
+    "animeImage": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/394260/anime/v70i7zltv-2.jpg",
     "photo": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/394260/v70i7zltv-2.webp",
     "photoThumb": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/394260/thumb/v70i7zltv-2.webp",
     "takenAt": "2025-04-28T11:21:35+09:00",
     "source": "anitabi",
     "anitabiPointId": "v70i7zltv",
-    "origin": "anitabi",
-    "originURL": "https://www.anitabi.cn/map?bangumiId=394260&pid=v70i7zltv"
+    "origin": "trace.moe",
+    "originURL": "https://trace.moe/?url=https%3A%2F%2Fcdn.jsdelivr.net%2Fgh%2FQiYuOr2%2Fblog-image%40master%2Ftabi%2F394260%2Fanime%2Fv70i7zltv-2.jpg"
   },
   {
     "id": "394260-j4fx6i32h",
@@ -1271,14 +1271,14 @@
     "pointName": "洗足站 站名牌",
     "lat": 35.61041,
     "lng": 139.694366,
-    "animeImage": "https://image.anitabi.cn/user/0/bangumi/394260/points/j4fx6i32h-1712092718906.jpg?plan=h360",
+    "animeImage": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/394260/anime/j4fx6i32h.jpg",
     "photo": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/394260/j4fx6i32h.webp",
     "photoThumb": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/394260/thumb/j4fx6i32h.webp",
     "takenAt": "2025-04-28T11:23:33+09:00",
     "source": "anitabi",
     "anitabiPointId": "j4fx6i32h",
-    "origin": "anitabi",
-    "originURL": "https://www.anitabi.cn/map?bangumiId=394260&pid=j4fx6i32h"
+    "origin": "trace.moe",
+    "originURL": "https://trace.moe/?url=https%3A%2F%2Fcdn.jsdelivr.net%2Fgh%2FQiYuOr2%2Fblog-image%40master%2Ftabi%2F394260%2Fanime%2Fj4fx6i32h.jpg"
   },
   {
     "id": "394260-v70i7zltv",
@@ -1329,20 +1329,20 @@
     "originURL": "https://www.anitabi.cn/map?bangumiId=394260&pid=v70i80evm"
   },
   {
-    "id": "394260-5dh0xsi",
+    "id": "394260-v70i80c6y",
     "bangumiId": 394260,
     "animeName": "我心里危险的东西",
     "pointName": "全家便利店原町二丁目店 附近",
-    "lat": 35.614015,
-    "lng": 139.69166,
-    "animeImage": "https://image.anitabi.cn/points/394260/5dh0xsi_1758708921403.jpg?plan=h360",
-    "photo": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/394260/5dh0xsi.webp",
-    "photoThumb": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/394260/thumb/5dh0xsi.webp",
+    "lat": 35.614028,
+    "lng": 139.691694,
+    "animeImage": "https://image.anitabi.cn/user/1139/bangumi/394260/points/v70i80c6y-1746148166654.jpg?plan=h360",
+    "photo": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/394260/v70i80c6y.webp",
+    "photoThumb": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/394260/thumb/v70i80c6y.webp",
     "takenAt": "2025-04-28T12:37:31+09:00",
     "source": "anitabi",
-    "anitabiPointId": "5dh0xsi",
+    "anitabiPointId": "v70i80c6y",
     "origin": "anitabi",
-    "originURL": "https://www.anitabi.cn/map?bangumiId=394260&pid=5dh0xsi"
+    "originURL": "https://www.anitabi.cn/map?bangumiId=394260&pid=v70i80c6y"
   },
   {
     "id": "394260-j9poomvoe",
@@ -1521,20 +1521,20 @@
     "originURL": "https://www.anitabi.cn/map?bangumiId=441795&pid=1a6lpte"
   },
   {
-    "id": "441795-5dh5uua",
-    "bangumiId": 441795,
-    "animeName": "我心里危险的东西 第二季",
+    "id": "394260-j4fx6i32h-2",
+    "bangumiId": 394260,
+    "animeName": "我心里危险的东西",
     "pointName": "洗足站 售票窗口",
-    "lat": 35.610462,
-    "lng": 139.694273,
-    "animeImage": "https://image.anitabi.cn/points/394260/5dh5uua_1758709149999.jpg?plan=h360",
-    "photo": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/441795/5dh5uua.webp",
-    "photoThumb": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/441795/thumb/5dh5uua.webp",
+    "lat": 35.61041,
+    "lng": 139.694366,
+    "animeImage": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/394260/anime/j4fx6i32h-2.jpg",
+    "photo": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/394260/j4fx6i32h-2.webp",
+    "photoThumb": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/394260/thumb/j4fx6i32h-2.webp",
     "takenAt": "2025-04-28T11:19:35+09:00",
     "source": "anitabi",
-    "anitabiPointId": "5dh5uua",
-    "origin": "anitabi",
-    "originURL": "https://www.anitabi.cn/map?bangumiId=441795&pid=5dh5uua"
+    "anitabiPointId": "j4fx6i32h",
+    "origin": "trace.moe",
+    "originURL": "https://trace.moe/?url=https%3A%2F%2Fcdn.jsdelivr.net%2Fgh%2FQiYuOr2%2Fblog-image%40master%2Ftabi%2F394260%2Fanime%2Fj4fx6i32h-2.jpg"
   },
   {
     "id": "441795-1a6lptf",
@@ -1543,14 +1543,14 @@
     "pointName": "洗足站前交流广场 长椅",
     "lat": 35.610675,
     "lng": 139.694648,
-    "animeImage": "https://image.anitabi.cn/user/1139/bangumi/441795/points/1a6lptf-1749804042253.jpg?plan=h360",
+    "animeImage": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/441795/anime/1a6lptf.jpg",
     "photo": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/441795/1a6lptf.webp",
     "photoThumb": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/441795/thumb/1a6lptf.webp",
     "takenAt": "2025-04-28T11:27:32+09:00",
     "source": "anitabi",
     "anitabiPointId": "1a6lptf",
-    "origin": "anitabi",
-    "originURL": "https://www.anitabi.cn/map?bangumiId=441795&pid=1a6lptf"
+    "origin": "trace.moe",
+    "originURL": "https://trace.moe/?url=https%3A%2F%2Fcdn.jsdelivr.net%2Fgh%2FQiYuOr2%2Fblog-image%40master%2Ftabi%2F441795%2Fanime%2F1a6lptf.jpg"
   },
   {
     "id": "441795-5di5vzx",
@@ -1559,14 +1559,14 @@
     "pointName": "洗足站前交流广场 长椅",
     "lat": 35.610657,
     "lng": 139.694665,
-    "animeImage": "https://image.anitabi.cn/points/441795/5di5vzx_1758710831102.jpg?plan=h360",
+    "animeImage": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/441795/anime/5di5vzx.jpg",
     "photo": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/441795/5di5vzx.webp",
     "photoThumb": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/441795/thumb/5di5vzx.webp",
     "takenAt": "2025-04-28T11:28:21+09:00",
     "source": "anitabi",
     "anitabiPointId": "5di5vzx",
-    "origin": "anitabi",
-    "originURL": "https://www.anitabi.cn/map?bangumiId=441795&pid=5di5vzx"
+    "origin": "trace.moe",
+    "originURL": "https://trace.moe/?url=https%3A%2F%2Fcdn.jsdelivr.net%2Fgh%2FQiYuOr2%2Fblog-image%40master%2Ftabi%2F441795%2Fanime%2F5di5vzx.jpg"
   },
   {
     "id": "441795-1a6lpn3",
@@ -1575,14 +1575,14 @@
     "pointName": "洗足站前交流广场",
     "lat": 35.610658,
     "lng": 139.694627,
-    "animeImage": "https://image.anitabi.cn/user/1139/bangumi/441795/points/1a6lpn3-1749804042253.jpg?plan=h360",
+    "animeImage": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/441795/anime/1a6lpn3.jpg",
     "photo": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/441795/1a6lpn3.webp",
     "photoThumb": "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi/441795/thumb/1a6lpn3.webp",
     "takenAt": "2025-04-28T11:28:44+09:00",
     "source": "anitabi",
     "anitabiPointId": "1a6lpn3",
-    "origin": "anitabi",
-    "originURL": "https://www.anitabi.cn/map?bangumiId=441795&pid=1a6lpn3"
+    "origin": "trace.moe",
+    "originURL": "https://trace.moe/?url=https%3A%2F%2Fcdn.jsdelivr.net%2Fgh%2FQiYuOr2%2Fblog-image%40master%2Ftabi%2F441795%2Fanime%2F1a6lpn3.jpg"
   },
   {
     "id": "441795-1a6lpn7",
