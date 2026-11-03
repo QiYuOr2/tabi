@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { imagePlan, prefetchImage } from "../lib/images";
+import { imagePlan, photoMedium, prefetchImage } from "../lib/images";
 import { workName } from "../lib/spots";
 import type { Spot } from "../types/spot";
 
@@ -27,15 +27,37 @@ const animeFailed = ref(false);
 const animeLoaded = ref(false);
 const photoFailed = ref(false);
 const photoLoaded = ref(false);
+const photoUseOriginal = ref(false);
 const lightbox = ref(false);
 const lightboxFailed = ref(false);
 const canZoomPhoto = computed(() => Boolean(spot.value.photo) && !photoFailed.value);
+const photoSrc = computed(() => {
+  const original = spot.value.photo;
+  if (!original) return null;
+  if (photoUseOriginal.value) return original;
+  return photoMedium(original) ?? original;
+});
 
+/** 当前页和前后各一页。动画截图仍是 h360；实拍只预取 640 中图。 */
 function warm(i: number) {
-  const page = props.spots[i];
-  if (!page) return;
-  prefetchImage(imagePlan(page.animeImage, "h360"));
-  if (page.photo) prefetchImage(page.photo);
+  for (let n = i - 1; n <= i + 1; n++) {
+    const page = props.spots[n];
+    if (!page) continue;
+    prefetchImage(imagePlan(page.animeImage, "h360"));
+    prefetchImage(photoMedium(page.photo));
+  }
+}
+
+function onPhotoError(ev: Event) {
+  const original = spot.value.photo;
+  const medium = original ? photoMedium(original) : null;
+  const current = ev.target instanceof HTMLImageElement ? ev.target.getAttribute("src") : null;
+  if (medium && original && current === medium && medium !== original) {
+    photoUseOriginal.value = true;
+    photoLoaded.value = false;
+    return;
+  }
+  photoFailed.value = true;
 }
 
 function show(i: number) {
@@ -44,6 +66,7 @@ function show(i: number) {
   animeLoaded.value = false;
   photoFailed.value = false;
   photoLoaded.value = false;
+  photoUseOriginal.value = false;
   lightboxFailed.value = false;
   index.value = i;
   warm(i);
@@ -123,7 +146,10 @@ function onLightboxPointerUp(ev: PointerEvent) {
   if (!lightboxDownOnImage) closeLightbox();
 }
 
-onMounted(() => window.addEventListener("keydown", onKey, true));
+onMounted(() => {
+  warm(index.value);
+  window.addEventListener("keydown", onKey, true);
+});
 onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 </script>
 
@@ -195,7 +221,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
             @click="openLightbox"
           >
             <img
-              :src="spot.photo"
+              :src="photoSrc || spot.photo"
               alt="实拍"
               class="aspect-video w-full rounded-sm bg-[#f2f2f2] object-cover"
               :class="photoLoaded ? 'opacity-100' : 'opacity-0'"
@@ -203,7 +229,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
               decoding="async"
               draggable="false"
               @load="photoLoaded = true"
-              @error="photoFailed = true"
+              @error="onPhotoError"
             />
           </button>
           <div
