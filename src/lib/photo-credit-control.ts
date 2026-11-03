@@ -1,27 +1,55 @@
 import type { IControl, Map } from "maplibre-gl";
 
+/** 与图例窄屏断点一致：小于 640px。 */
+const NARROW_MAX = 640;
+/** 展开时声明底边和 attribution 顶边之间的缝。 */
+const STACK_GAP = 8;
+const RAISE_MS = 200;
+
 /**
  * 左下角的实拍版权声明。
  *
- * 这版 MapLibre 的 attribution 默认是 compact：白底、12px 圆角、距边 10px、
- * 字号 12px/20px。非 compact 的贴边半透明条不会出现在右下角，所以这里沿用
- * attribution 的样式类，再把盒子改成和展开的胶囊一致（文字两侧 8px，不留信息按钮的空位）。
- * 窄屏里那条胶囊会横跨底边，盖住左下角时把声明抬到它上沿。
+ * 桌面：和右下角 attribution 并排贴在底边，共用图例面板那套胶囊。
+ * 窄屏：attribution 展开时横跨底边（一两行），声明上移到它上面；
+ * 收成信息按钮时声明落回同一条底边。上移用 transform，避免和署名重叠。
  */
 export class PhotoCreditControl implements IControl {
   private map: Map | undefined;
   private container: HTMLElement | undefined;
-  private observer: MutationObserver | undefined;
-  private readonly place = () => {
-    this.placeClearOfAttribution();
+  private attribEl: HTMLElement | undefined;
+  private mutation: MutationObserver | undefined;
+  private attribSize: ResizeObserver | undefined;
+  private creditSize: ResizeObserver | undefined;
+  private seenExpanded = false;
+  private animateNext = false;
+  private hold = false;
+  private token = 0;
+  private releaseTimer = 0;
+  private readonly onResize = () => {
+    this.sync(false);
+  };
+  private readonly onClass = () => {
+    const expanded = this.isExpanded();
+    if (expanded === this.seenExpanded) return;
+    this.seenExpanded = expanded;
+    if (!this.animateNext) return;
+    this.sync(true);
+  };
+  private readonly onAttribResize = () => {
+    if (this.hold || !this.animateNext) return;
+    const el = this.container;
+    const attrib = this.attribEl;
+    if (!el || !attrib || !el.classList.contains("is-raised")) return;
+    if (!this.isNarrow() || !this.isExpanded()) return;
+    this.setRaise(el, attrib.getBoundingClientRect().height, true);
   };
 
   onAdd(map: Map) {
     this.map = map;
     const container = document.createElement("div");
-    container.className = "maplibregl-ctrl maplibregl-ctrl-attrib photo-credit";
+    container.className = "maplibregl-ctrl photo-credit";
     const inner = document.createElement("div");
-    inner.className = "maplibregl-ctrl-attrib-inner";
+    inner.className = "photo-credit-inner";
     inner.append("© 2026 ");
     const link = document.createElement("a");
     link.href = "https://github.com/QiYuOr2";
@@ -30,68 +58,143 @@ export class PhotoCreditControl implements IControl {
     link.textContent = "QiYuOr2";
     inner.append(link, " · 实拍照片版权所有");
     container.append(inner);
-    container.style.margin = "10px";
-    container.style.padding = "2px 8px";
-    container.style.backgroundColor = "#fff";
-    container.style.borderRadius = "12px";
-    container.style.lineHeight = "20px";
     this.container = container;
-    map.on("resize", this.place);
-    map.on("idle", this.place);
-    map.on("drag", this.place);
-    requestAnimationFrame(this.place);
+    this.creditSize = new ResizeObserver(this.onResize);
+    this.creditSize.observe(container);
+    map.on("resize", this.onResize);
+    requestAnimationFrame(() => {
+      this.sync(false);
+      this.animateNext = true;
+    });
     return container;
   }
 
   onRemove() {
-    this.observer?.disconnect();
-    this.observer = undefined;
-    this.map?.off("resize", this.place);
-    this.map?.off("idle", this.place);
-    this.map?.off("drag", this.place);
+    this.token += 1;
+    window.clearTimeout(this.releaseTimer);
+    this.mutation?.disconnect();
+    this.attribSize?.disconnect();
+    this.creditSize?.disconnect();
+    this.mutation = undefined;
+    this.attribSize = undefined;
+    this.creditSize = undefined;
+    this.attribEl?.classList.remove("is-hold");
+    this.map?.off("resize", this.onResize);
+    const mapEl = this.map?.getContainer();
+    mapEl?.style.removeProperty("--photo-credit-width");
+    mapEl?.style.removeProperty("--map-width");
     this.container?.remove();
     this.container = undefined;
+    this.attribEl = undefined;
     this.map = undefined;
   }
 
-  private attribution() {
-    const attrib = this.map
-      ?.getContainer()
-      .querySelector(".maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib");
-    if (!(attrib instanceof HTMLElement)) return undefined;
-    if (!this.observer) {
-      this.observer = new MutationObserver(this.place);
-      this.observer.observe(attrib, {
-        attributes: true,
-        attributeFilter: ["class", "open"],
-        childList: true,
-        subtree: true,
-      });
-    }
-    return attrib;
+  private isNarrow() {
+    const width = this.map?.getContainer().clientWidth ?? 0;
+    return width > 0 && width < NARROW_MAX;
   }
 
-  /** 以距边 10px 为常态；和右下角 attribution 重叠时，改贴在它上沿。 */
-  private placeClearOfAttribution() {
-    const el = this.container;
+  private isExpanded() {
+    return this.attribEl?.classList.contains("maplibregl-compact-show") ?? false;
+  }
+
+  private ensureAttrib() {
+    const found = this.map
+      ?.getContainer()
+      .querySelector(".maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib");
+    if (!(found instanceof HTMLElement) || found === this.attribEl) return;
+    this.mutation?.disconnect();
+    this.attribSize?.disconnect();
+    this.attribEl = found;
+    this.mutation = new MutationObserver(this.onClass);
+    this.mutation.observe(found, { attributes: true, attributeFilter: ["class"] });
+    this.attribSize = new ResizeObserver(this.onAttribResize);
+    this.attribSize.observe(found);
+  }
+
+  private publishWidths() {
     const map = this.map;
-    if (!el || !map) return;
-    const attrib = this.attribution();
-    const inset = 10;
-    el.style.marginTop = `${inset}px`;
-    el.style.marginRight = `${inset}px`;
-    el.style.marginLeft = `${inset}px`;
-    el.style.marginBottom = `${inset}px`;
-    if (!attrib) return;
-    const mapRect = map.getContainer().getBoundingClientRect();
-    const attr = attrib.getBoundingClientRect();
-    if (attr.width <= 0 || attr.height <= 0 || el.offsetWidth <= 0) return;
-    const left = mapRect.left + inset;
-    const right = left + el.offsetWidth;
-    const bottom = mapRect.bottom - inset;
-    const top = bottom - el.offsetHeight;
-    const hits = left < attr.right && right > attr.left && top < attr.bottom && bottom > attr.top;
-    if (!hits) return;
-    el.style.marginBottom = `${Math.ceil(mapRect.bottom - attr.top)}px`;
+    const el = this.container;
+    if (!map || !el) return;
+    const mapEl = map.getContainer();
+    mapEl.style.setProperty("--map-width", `${mapEl.clientWidth}px`);
+    const width = el.getBoundingClientRect().width;
+    if (width > 0) mapEl.style.setProperty("--photo-credit-width", `${Math.ceil(width)}px`);
+  }
+
+  private setRaise(el: HTMLElement, height: number, instant: boolean) {
+    if (height <= 0) return;
+    const px = `${Math.ceil(height) + STACK_GAP}px`;
+    if (el.style.getPropertyValue("--credit-raise") === px && el.classList.contains("is-raised")) {
+      return;
+    }
+    if (instant) el.classList.add("is-instant");
+    el.style.setProperty("--credit-raise", px);
+    if (instant) requestAnimationFrame(() => el.classList.remove("is-instant"));
+  }
+
+  private lowerPill() {
+    this.token += 1;
+    this.hold = false;
+    window.clearTimeout(this.releaseTimer);
+    this.attribEl?.classList.remove("is-hold");
+    this.container?.classList.remove("is-raised");
+  }
+
+  /** 先把声明抬上去，再让署名横展开，中间不叠在一起。 */
+  private raisePill(animate: boolean) {
+    const el = this.container;
+    const attrib = this.attribEl;
+    if (!el || !attrib) return;
+    // 测量时先拿掉 is-hold，否则读到的是信息按钮的 28px，不是横条高度。
+    attrib.classList.remove("is-hold");
+    const height = attrib.getBoundingClientRect().height;
+    if (height <= 0) return;
+    if (!animate || el.classList.contains("is-raised")) {
+      this.hold = false;
+      this.setRaise(el, height, true);
+      el.classList.add("is-raised");
+      return;
+    }
+    this.hold = true;
+    attrib.classList.add("is-hold");
+    this.setRaise(el, height, false);
+    const token = ++this.token;
+    const finish = () => {
+      if (token !== this.token) return;
+      this.hold = false;
+      if (!this.isNarrow() || !this.isExpanded()) {
+        attrib.classList.remove("is-hold");
+        return;
+      }
+      attrib.classList.remove("is-hold");
+      const real = attrib.getBoundingClientRect().height;
+      this.setRaise(el, real, true);
+    };
+    const onEnd = (ev: TransitionEvent) => {
+      if (ev.propertyName !== "transform" || ev.target !== el) return;
+      el.removeEventListener("transitionend", onEnd);
+      window.clearTimeout(this.releaseTimer);
+      finish();
+    };
+    el.addEventListener("transitionend", onEnd);
+    window.clearTimeout(this.releaseTimer);
+    this.releaseTimer = window.setTimeout(() => {
+      el.removeEventListener("transitionend", onEnd);
+      finish();
+    }, RAISE_MS + 80);
+    el.classList.add("is-raised");
+  }
+
+  private sync(animate: boolean) {
+    this.ensureAttrib();
+    this.publishWidths();
+    const expanded = this.isExpanded();
+    this.seenExpanded = expanded;
+    if (!this.isNarrow() || !expanded) {
+      this.lowerPill();
+      return;
+    }
+    this.raisePill(animate);
   }
 }

@@ -52,6 +52,21 @@ function toggleLegend() {
   if (locateToast.value) void nextTick(() => placeLocateToast());
 }
 
+/** 图例收起动画时长。定位后等它滑走再量一次提示，避免按展开时的占位摆。 */
+const LEGEND_COLLAPSE_MS = 200;
+let legendPlaceTimer = 0;
+
+/** 窄屏定位时收起图例。桌面不收。已经收起时不再重播动画。 */
+function collapseLegendForLocate() {
+  if (!narrow.value || legendCollapsed.value) return;
+  legendCollapsed.value = true;
+  window.clearTimeout(legendPlaceTimer);
+  legendPlaceTimer = window.setTimeout(() => {
+    legendPlaceTimer = 0;
+    if (locateToast.value) placeLocateToast();
+  }, LEGEND_COLLAPSE_MS + 20);
+}
+
 const groups = groupByAnime(spots);
 const colorOf = (s: Spot) => groups.find((g) => g.spots.includes(s))?.color ?? "#555";
 
@@ -136,27 +151,32 @@ function panPopupIntoView(m: MlMap, p: Popup) {
   ) {
     minTop = Math.max(minTop, legend.bottom + margin);
   }
-  const rightControls = m.getContainer().querySelector(".maplibregl-ctrl-bottom-right");
-  const right = rightControls?.getBoundingClientRect();
-  if (
-    right &&
-    right.width > 0 &&
-    rect.right > right.left - margin &&
-    rect.bottom > right.top - margin
-  ) {
-    maxBottom = Math.min(maxBottom, right.top - margin);
-    maxRight = Math.min(maxRight, right.left - margin);
-  }
-  const leftControls = m.getContainer().querySelector(".maplibregl-ctrl-bottom-left");
-  const left = leftControls?.getBoundingClientRect();
-  if (
-    left &&
-    left.width > 0 &&
-    rect.left < left.right + margin &&
-    rect.bottom > left.top - margin
-  ) {
-    maxBottom = Math.min(maxBottom, left.top - margin);
-    minLeft = Math.max(minLeft, left.right + margin);
+  // 用每颗控件自己的盒子，不用角落容器。窄屏展开时署名横跨底边，
+  // 容器的外接矩形会把缩放按钮旁边的空白也算进去。
+  for (const node of m
+    .getContainer()
+    .querySelectorAll(
+      ".maplibregl-ctrl-bottom-left > .maplibregl-ctrl, .maplibregl-ctrl-bottom-right > .maplibregl-ctrl",
+    )) {
+    if (!(node instanceof HTMLElement)) continue;
+    const box = node.getBoundingClientRect();
+    if (
+      box.width <= 0 ||
+      box.height <= 0 ||
+      rect.right <= box.left - margin ||
+      rect.left >= box.right + margin ||
+      rect.bottom <= box.top - margin ||
+      rect.top >= box.bottom + margin
+    ) {
+      continue;
+    }
+    maxBottom = Math.min(maxBottom, box.top - margin);
+    if (box.width > mapRect.width * 0.6) continue;
+    if (box.left + box.width / 2 > mapRect.left + mapRect.width / 2) {
+      maxRight = Math.min(maxRight, box.left - margin);
+    } else {
+      minLeft = Math.max(minLeft, box.right + margin);
+    }
   }
 
   let x = 0;
@@ -929,11 +949,12 @@ function placeLocateToast() {
     }
   }
 
-  const blocks = [
-    map.value?.getContainer().querySelector(".maplibregl-ctrl-bottom-left"),
-    map.value?.getContainer().querySelector(".maplibregl-ctrl-bottom-right"),
-  ];
-  for (const node of blocks) {
+  const blocks = map.value
+    ?.getContainer()
+    .querySelectorAll(
+      ".maplibregl-ctrl-bottom-left > .maplibregl-ctrl, .maplibregl-ctrl-bottom-right > .maplibregl-ctrl",
+    );
+  for (const node of blocks ?? []) {
     if (!(node instanceof HTMLElement)) continue;
     const box = node.getBoundingClientRect();
     if (box.width <= 0 || box.height <= 0 || !rectsOverlap(rect, box, 8)) continue;
@@ -962,6 +983,8 @@ function showLocateToast(text: string) {
     toastTimer = 0;
     locateToast.value = null;
   }, LOCATE_TOAST_MS);
+  // 图例正在滑出时先不摆，等收起后再量，避免提示跟着半开的面板跳一截。
+  if (legendPlaceTimer) return;
   void nextTick(() => placeLocateToast());
 }
 
@@ -1062,6 +1085,17 @@ function resetView() {
 /** 只有一个地点时飞到这一级，多地点的包围盒也不会放得比这更近。 */
 const FOCUS_ZOOM = 16;
 
+/**
+ * 桌面图例停在左上角，包围盒上边多 40、左边多 24，躲开面板。
+ * 窄屏定位会先收起图例，四边用同一边距，不再为已经关上的面板留空。
+ */
+function locateFitPadding(m: MlMap) {
+  const view = Math.min(m.getContainer().clientWidth, m.getContainer().clientHeight);
+  const padding = Math.max(48, Math.min(80, Math.round(view * 0.12)));
+  if (narrow.value) return padding;
+  return { top: padding + 40, right: padding, bottom: padding, left: padding + 24 };
+}
+
 function focusGroup(key: string) {
   const m = map.value;
   const group = groups.find((item) => item.key === key);
@@ -1072,6 +1106,7 @@ function focusGroup(key: string) {
     next.delete(key);
     hidden.value = next;
   }
+  collapseLegendForLocate();
   closePopup({ preserveLink: true });
   startLocateHighlight(group);
   setLink({ work: canonicalWorkId(group), spot: null });
@@ -1084,11 +1119,9 @@ function focusGroup(key: string) {
   }
   const bounds = new LngLatBounds();
   for (const spot of group.spots) bounds.extend([spot.lng, spot.lat]);
-  const view = Math.min(m.getContainer().clientWidth, m.getContainer().clientHeight);
-  const padding = Math.max(48, Math.min(80, Math.round(view * 0.12)));
   moveCamera(() => {
     m.fitBounds(bounds, {
-      padding: { top: padding + 40, right: padding, bottom: padding, left: padding + 24 },
+      padding: locateFitPadding(m),
       maxZoom: FOCUS_ZOOM,
       duration: 400,
     });
@@ -1252,6 +1285,7 @@ onBeforeUnmount(() => {
   window.clearTimeout(eyePressTimer);
   window.clearTimeout(locateTimer);
   window.clearTimeout(toastTimer);
+  window.clearTimeout(legendPlaceTimer);
   closePopup({ preserveLink: true });
   map.value?.remove();
 });
@@ -1264,7 +1298,7 @@ onBeforeUnmount(() => {
 
     <aside
       data-map-legend
-      class="absolute top-2.5 z-10 flex w-max max-w-[calc(70vw+50px)] items-center transition-transform duration-200 ease-out motion-reduce:transition-none"
+      class="absolute z-10 flex w-max max-w-[calc(70vw+50px)] items-center transition-transform duration-200 ease-out motion-reduce:transition-none"
       :class="
         narrow
           ? legendCollapsed
@@ -1416,6 +1450,189 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
+/* 图例停在安全区下面。top-2.5 是 10px，这里加上 iOS 顶部 inset。 */
+[data-map-legend] {
+  top: calc(10px + env(safe-area-inset-top, 0px));
+}
+
+/*
+ * 底边两块署名跟图例面板同一套：
+ * rounded bg-white px-2.5 py-1 text-xs leading-5 text-[#333]
+ * shadow-[0_0_0_2px_rgba(0,0,0,0.1)]
+ * 单行高 28px。桌面并排贴底。窄屏里 attribution 展开时横跨底边，
+ * 声明用 transform 抬到它上面；收起后回到和信息按钮同一条底边。
+ */
+.maplibregl-ctrl-bottom-left,
+.maplibregl-ctrl-bottom-right {
+  bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.maplibregl-ctrl-bottom-left {
+  left: env(safe-area-inset-left, 0px);
+}
+
+.maplibregl-ctrl-bottom-right {
+  right: env(safe-area-inset-right, 0px);
+}
+
+.photo-credit {
+  box-sizing: border-box;
+  margin: 0 0 10px 10px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: #fff;
+  color: #333;
+  font-family: system-ui, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 10%);
+}
+
+.photo-credit a,
+.maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.photo-credit a:hover,
+.maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib a:hover {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.maplibregl-ctrl-bottom-right > .maplibregl-ctrl.maplibregl-ctrl-attrib {
+  box-sizing: border-box;
+  float: right;
+  clear: both;
+  position: relative;
+  margin: 0 10px 10px 0;
+  border-radius: 4px;
+  background: #fff;
+  color: #333;
+  font-family: system-ui, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  font-size: 12px;
+  line-height: 20px;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 10%);
+}
+
+.maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib.maplibregl-compact-show {
+  width: max-content;
+  max-width: calc(
+    var(--map-width, 100vw) - var(--photo-credit-width, 14rem) - 28px -
+      env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)
+  );
+  min-width: 0;
+  min-height: 28px;
+  padding: 4px 32px 4px 10px;
+}
+
+.maplibregl-ctrl-bottom-right
+  > .maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show) {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+}
+
+.maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-inner {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button {
+  top: auto;
+  right: 0;
+  bottom: 0;
+  left: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background-color: transparent;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 24px 24px;
+}
+
+.maplibregl-ctrl-bottom-right
+  > .maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show)
+  .maplibregl-ctrl-attrib-button {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 28px;
+  height: 28px;
+}
+
+.maplibregl-ctrl-bottom-right
+  > .maplibregl-ctrl-attrib.maplibregl-compact-show
+  .maplibregl-ctrl-attrib-button {
+  background-color: transparent;
+}
+
+.maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib .maplibregl-ctrl-attrib-button:hover {
+  background-color: rgb(0 0 0 / 5%);
+}
+
+/* 窄屏：展开的署名占满底边，按词折行，不再挤成右侧的细高条。 */
+@media (max-width: 639px) {
+  .photo-credit {
+    max-width: calc(
+      100vw - 20px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)
+    );
+    transition: transform 200ms ease;
+  }
+
+  .photo-credit.is-instant {
+    transition: none;
+  }
+
+  .photo-credit.is-raised {
+    transform: translateY(calc(-1 * var(--credit-raise, 0px)));
+  }
+
+  .maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib.maplibregl-compact-show:not(.is-hold) {
+    width: calc(
+      var(--map-width, 100vw) - 20px - env(safe-area-inset-left, 0px) -
+        env(safe-area-inset-right, 0px)
+    );
+    max-width: none;
+    height: auto;
+  }
+
+  /* 声明还在上移时，署名先维持信息按钮的尺寸，避免横条从声明底下长出来。 */
+  .maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib.maplibregl-compact-show.is-hold {
+    width: 28px;
+    height: 28px;
+    min-height: 28px;
+    max-width: 28px;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .maplibregl-ctrl-bottom-right
+    > .maplibregl-ctrl-attrib.maplibregl-compact-show.is-hold
+    .maplibregl-ctrl-attrib-inner {
+    display: none;
+  }
+
+  .maplibregl-ctrl-bottom-right
+    > .maplibregl-ctrl-attrib.maplibregl-compact-show.is-hold
+    .maplibregl-ctrl-attrib-button {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+  }
+}
+
+@media (max-width: 374px) {
+  .photo-credit {
+    white-space: normal;
+  }
+}
+
 /* 与图例面板相同：白底、右侧 4px 圆角、2px 的 10% 黑描边环。相接一侧裁掉描边，避免双线。 */
 .legend-ear {
   left: 0;
@@ -1437,7 +1654,8 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .legend-ear,
-  button.spot-thumb {
+  button.spot-thumb,
+  .photo-credit {
     transition: none;
   }
 
