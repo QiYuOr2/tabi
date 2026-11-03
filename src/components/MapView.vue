@@ -151,27 +151,32 @@ function panPopupIntoView(m: MlMap, p: Popup) {
   ) {
     minTop = Math.max(minTop, legend.bottom + margin);
   }
-  const rightControls = m.getContainer().querySelector(".maplibregl-ctrl-bottom-right");
-  const right = rightControls?.getBoundingClientRect();
-  if (
-    right &&
-    right.width > 0 &&
-    rect.right > right.left - margin &&
-    rect.bottom > right.top - margin
-  ) {
-    maxBottom = Math.min(maxBottom, right.top - margin);
-    maxRight = Math.min(maxRight, right.left - margin);
-  }
-  const leftControls = m.getContainer().querySelector(".maplibregl-ctrl-bottom-left");
-  const left = leftControls?.getBoundingClientRect();
-  if (
-    left &&
-    left.width > 0 &&
-    rect.left < left.right + margin &&
-    rect.bottom > left.top - margin
-  ) {
-    maxBottom = Math.min(maxBottom, left.top - margin);
-    minLeft = Math.max(minLeft, left.right + margin);
+  // 用每颗控件自己的盒子，不用角落容器。窄屏展开时署名横跨底边，
+  // 容器的外接矩形会把缩放按钮旁边的空白也算进去。
+  for (const node of m
+    .getContainer()
+    .querySelectorAll(
+      ".maplibregl-ctrl-bottom-left > .maplibregl-ctrl, .maplibregl-ctrl-bottom-right > .maplibregl-ctrl",
+    )) {
+    if (!(node instanceof HTMLElement)) continue;
+    const box = node.getBoundingClientRect();
+    if (
+      box.width <= 0 ||
+      box.height <= 0 ||
+      rect.right <= box.left - margin ||
+      rect.left >= box.right + margin ||
+      rect.bottom <= box.top - margin ||
+      rect.top >= box.bottom + margin
+    ) {
+      continue;
+    }
+    maxBottom = Math.min(maxBottom, box.top - margin);
+    if (box.width > mapRect.width * 0.6) continue;
+    if (box.left + box.width / 2 > mapRect.left + mapRect.width / 2) {
+      maxRight = Math.min(maxRight, box.left - margin);
+    } else {
+      minLeft = Math.max(minLeft, box.right + margin);
+    }
   }
 
   let x = 0;
@@ -944,11 +949,12 @@ function placeLocateToast() {
     }
   }
 
-  const blocks = [
-    map.value?.getContainer().querySelector(".maplibregl-ctrl-bottom-left"),
-    map.value?.getContainer().querySelector(".maplibregl-ctrl-bottom-right"),
-  ];
-  for (const node of blocks) {
+  const blocks = map.value
+    ?.getContainer()
+    .querySelectorAll(
+      ".maplibregl-ctrl-bottom-left > .maplibregl-ctrl, .maplibregl-ctrl-bottom-right > .maplibregl-ctrl",
+    );
+  for (const node of blocks ?? []) {
     if (!(node instanceof HTMLElement)) continue;
     const box = node.getBoundingClientRect();
     if (box.width <= 0 || box.height <= 0 || !rectsOverlap(rect, box, 8)) continue;
@@ -1453,8 +1459,8 @@ onBeforeUnmount(() => {
  * 底边两块署名跟图例面板同一套：
  * rounded bg-white px-2.5 py-1 text-xs leading-5 text-[#333]
  * shadow-[0_0_0_2px_rgba(0,0,0,0.1)]
- * 单行高 28px。声明在左，attribution 在右，底边对齐，不随展开/收起上下跳。
- * 窄屏时 attribution 在声明右侧的剩余宽度里换行，不盖住声明，也不伸进缩放按钮。
+ * 单行高 28px。桌面并排贴底。窄屏里 attribution 展开时横跨底边，
+ * 声明用 transform 抬到它上面；收起后回到和信息按钮同一条底边。
  */
 .maplibregl-ctrl-bottom-left,
 .maplibregl-ctrl-bottom-right {
@@ -1569,6 +1575,64 @@ onBeforeUnmount(() => {
   background-color: rgb(0 0 0 / 5%);
 }
 
+/* 窄屏：展开的署名占满底边，按词折行，不再挤成右侧的细高条。 */
+@media (max-width: 639px) {
+  .photo-credit {
+    max-width: calc(
+      100vw - 20px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)
+    );
+    transition: transform 200ms ease;
+  }
+
+  .photo-credit.is-instant {
+    transition: none;
+  }
+
+  .photo-credit.is-raised {
+    transform: translateY(calc(-1 * var(--credit-raise, 0px)));
+  }
+
+  .maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib.maplibregl-compact-show:not(.is-hold) {
+    width: calc(
+      var(--map-width, 100vw) - 20px - env(safe-area-inset-left, 0px) -
+        env(safe-area-inset-right, 0px)
+    );
+    max-width: none;
+    height: auto;
+  }
+
+  /* 声明还在上移时，署名先维持信息按钮的尺寸，避免横条从声明底下长出来。 */
+  .maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib.maplibregl-compact-show.is-hold {
+    width: 28px;
+    height: 28px;
+    min-height: 28px;
+    max-width: 28px;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .maplibregl-ctrl-bottom-right
+    > .maplibregl-ctrl-attrib.maplibregl-compact-show.is-hold
+    .maplibregl-ctrl-attrib-inner {
+    display: none;
+  }
+
+  .maplibregl-ctrl-bottom-right
+    > .maplibregl-ctrl-attrib.maplibregl-compact-show.is-hold
+    .maplibregl-ctrl-attrib-button {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+  }
+}
+
+@media (max-width: 374px) {
+  .photo-credit {
+    white-space: normal;
+  }
+}
+
 /* 与图例面板相同：白底、右侧 4px 圆角、2px 的 10% 黑描边环。相接一侧裁掉描边，避免双线。 */
 .legend-ear {
   left: 0;
@@ -1590,7 +1654,8 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .legend-ear,
-  button.spot-thumb {
+  button.spot-thumb,
+  .photo-credit {
     transition: none;
   }
 
