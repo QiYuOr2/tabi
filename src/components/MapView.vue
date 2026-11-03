@@ -10,7 +10,14 @@ import {
   shallowRef,
   type App,
 } from "vue";
-import { clusterByDistance, THUMB_GAP, THUMB_H, THUMB_W, type ScreenPoint } from "../lib/cluster";
+import {
+  clusterByOverlap,
+  previewsOverlap,
+  THUMB_GAP,
+  THUMB_H,
+  THUMB_W,
+  type ScreenPoint,
+} from "../lib/cluster";
 import { imagePlan, prefetchImage } from "../lib/images";
 import {
   MAP_STYLE_URL,
@@ -221,26 +228,169 @@ function scenePages(spot: Spot): Spot[] {
   return pages;
 }
 
-/** 锚点之间至少隔开一个图钉加缝，斜向放置时也不会叠住。 */
-function ringOffsets(count: number) {
-  if (count <= 1) return [{ x: 0, y: 0 }];
-  const minDist = THUMB_W + THUMB_GAP + 12;
-  const radius = count === 2 ? minDist / 2 : minDist / (2 * Math.sin(Math.PI / count));
-  const offsets = [];
-  for (let i = 0; i < count; i++) {
-    const angle = -Math.PI / 2 + (2 * Math.PI * i) / count;
-    offsets.push({
-      x: Math.round(Math.cos(angle) * radius),
-      y: Math.round(Math.sin(angle) * radius),
-    });
+const badgeWidths = new Map<number, number>();
+let badgeMeasure: CanvasRenderingContext2D | null | undefined;
+
+/** 角标是 12px 字、左右各 4px 内边距，最短 18px。和 .spot-thumb-count 一致。 */
+function badgeWidth(count: number) {
+  const cached = badgeWidths.get(count);
+  if (cached != null) return cached;
+  badgeMeasure ??= document.createElement("canvas").getContext("2d");
+  let width = 18;
+  if (badgeMeasure) {
+    const family = getComputedStyle(document.body).fontFamily;
+    badgeMeasure.font = `12px ${family}`;
+    width = Math.max(18, Math.ceil(badgeMeasure.measureText(String(count)).width) + 8);
   }
-  return offsets;
+  badgeWidths.set(count, width);
+  return width;
+}
+
+function cardOnScreen(x: number, y: number, width: number, height: number) {
+  const left = x - THUMB_W / 2;
+  const right = x + THUMB_W / 2;
+  const top = y - THUMB_H / 2;
+  const bottom = y + THUMB_H / 2;
+  return right > 0 && left < width && bottom > 0 && top < height;
+}
+
+/**
+ * 同一坐标散开的偏移。相邻锚点默认至少隔开一个图钉加缝（THUMB_W + THUMB_GAP + 12）。
+ * 锚点四舍五入后，斜向的外框角有时仍会叠住，这时才把半径加大。没叠住时偏移和原来一致。
+ */
+function ringShifts(cx: number, cy: number, anchors: { x: number; y: number }[], counts: number[]) {
+  const count = anchors.length;
+  if (count <= 1) return [{ x: 0, y: 0 }];
+  const layout = (radius: number) => {
+    const shifts: { x: number; y: number }[] = [];
+    const centers: { x: number; y: number }[] = [];
+    for (let i = 0; i < count; i++) {
+      const angle = -Math.PI / 2 + (2 * Math.PI * i) / count;
+      const shift = {
+        x: Math.round(Math.cos(angle) * radius),
+        y: Math.round(Math.sin(angle) * radius),
+      };
+      const anchor = anchors[i]!;
+      const ox = Math.round(cx + shift.x - anchor.x);
+      const oy = Math.round(cy + shift.y - anchor.y);
+      shifts.push(shift);
+      centers.push({ x: anchor.x + ox, y: anchor.y - THUMB_H / 2 + oy });
+    }
+    return { shifts, centers };
+  };
+  const overlaps = (centers: { x: number; y: number }[]) => {
+    for (let i = 0; i < count; i++) {
+      for (let j = i + 1; j < count; j++) {
+        if (previewsOverlap(centers[i]!, counts[i]!, centers[j]!, counts[j]!, badgeWidth))
+          return true;
+      }
+    }
+    return false;
+  };
+  const minDist = THUMB_W + THUMB_GAP + 12;
+  let radius = count === 2 ? minDist / 2 : minDist / (2 * Math.sin(Math.PI / count));
+  let placed = layout(radius);
+  for (let step = 0; step < 24 && overlaps(placed.centers); step++) {
+    radius += 2;
+    placed = layout(radius);
+  }
+  return placed.shifts;
 }
 
 function placePin(pin: Pin, x: number, y: number) {
   if (pin.offset.x === x && pin.offset.y === y) return;
   pin.offset = { x, y };
   pin.marker.setOffset([x, y]);
+}
+
+/** 已经画出来的预览中心。偏移加在底边锚点上，中心在锚点上方半个图钉。 */
+function previewCenter(m: MlMap, pin: Pin) {
+  const p = m.project([pin.spot.lng, pin.spot.lat]);
+  return { x: p.x + pin.offset.x, y: p.y - THUMB_H / 2 + pin.offset.y };
+}
+
+/**
+ * 同一坐标散开后，圆环若盖住旁边已经分开的图钉，就把那枚也拉上同一个圆环再排一次。
+ * 没盖住任何人时不重算，偏移和原来的圆环一致。
+ * 已经被别的圆环拉走的图钉留在那边，避免两枚圆环来回抢。
+ */
+function settleFans(
+  m: MlMap,
+  fans: { reps: Pin[]; cx: number; cy: number }[],
+  members: Map<string, Pin[]>,
+) {
+  const parked = new Set<Pin>();
+  const countOf = (pin: Pin) => members.get(pin.spot.id)?.length ?? 1;
+
+  for (const fan of fans) {
+    if (fan.reps.some((pin) => parked.has(pin))) continue;
+    const reps = [...fan.reps];
+    const inRing = new Set(reps);
+    let guard = pins.length;
+    while (guard > 0) {
+      guard -= 1;
+      const anchors = reps.map((rep) => {
+        const anchor = m.project([rep.spot.lng, rep.spot.lat]);
+        return { x: anchor.x, y: anchor.y };
+      });
+      const offsets = ringShifts(
+        fan.cx,
+        fan.cy,
+        anchors,
+        reps.map((pin) => countOf(pin)),
+      );
+      let extra: Pin | undefined;
+      for (const pin of pins) {
+        if (inRing.has(pin) || parked.has(pin) || pin.button.classList.contains("is-hidden"))
+          continue;
+        const center = previewCenter(m, pin);
+        const count = countOf(pin);
+        const hit = reps.some((rep, index) => {
+          const shift = offsets[index] ?? { x: 0, y: 0 };
+          const anchor = anchors[index]!;
+          const ox = Math.round(fan.cx + shift.x - anchor.x);
+          const oy = Math.round(fan.cy + shift.y - anchor.y);
+          return previewsOverlap(
+            { x: anchor.x + ox, y: anchor.y - THUMB_H / 2 + oy },
+            countOf(rep),
+            center,
+            count,
+            badgeWidth,
+          );
+        });
+        if (hit) {
+          extra = pin;
+          break;
+        }
+      }
+      if (!extra) break;
+      reps.push(extra);
+      inRing.add(extra);
+    }
+    if (reps.length === fan.reps.length) continue;
+    const anchors = reps.map((rep) => {
+      const anchor = m.project([rep.spot.lng, rep.spot.lat]);
+      return { x: anchor.x, y: anchor.y };
+    });
+    const offsets = ringShifts(
+      fan.cx,
+      fan.cy,
+      anchors,
+      reps.map((pin) => countOf(pin)),
+    );
+    for (let index = 0; index < reps.length; index++) {
+      const rep = reps[index]!;
+      const anchor = anchors[index]!;
+      const shift = offsets[index] ?? { x: 0, y: 0 };
+      placePin(
+        rep,
+        Math.round(fan.cx + shift.x - anchor.x),
+        Math.round(fan.cy + shift.y - anchor.y),
+      );
+      setShown(rep, true);
+      parked.add(rep);
+    }
+  }
 }
 
 function openPopup(m: MlMap, spot: Spot) {
@@ -331,20 +481,18 @@ function layoutPins() {
     projected.push({ item: pin, x: p.x, y: p.y - THUMB_H / 2 });
   }
 
-  const clusters = clusterByDistance(projected, THUMB_W + THUMB_GAP, THUMB_H + THUMB_GAP);
+  projected.sort((a, b) => bySpotId(a.item, b.item));
+  const clusters = clusterByOverlap(projected, badgeWidth, (point) =>
+    cardOnScreen(point.x, point.y, width, height),
+  );
   const nextMembers = new Map<string, Pin[]>();
+  const fans: { reps: Pin[]; cx: number; cy: number }[] = [];
 
   for (const cluster of clusters) {
     const items = cluster.map((point) => point.item);
     for (const pin of items) nextMembers.set(pin.spot.id, items);
 
-    const onScreen = cluster.filter((point) => {
-      const left = point.x - THUMB_W / 2;
-      const right = point.x + THUMB_W / 2;
-      const top = point.y - THUMB_H / 2;
-      const bottom = point.y + THUMB_H / 2;
-      return right > 0 && left < width && bottom > 0 && top < height;
-    });
+    const onScreen = cluster.filter((point) => cardOnScreen(point.x, point.y, width, height));
     if (onScreen.length === 0) {
       for (const pin of items) setShown(pin, false);
       continue;
@@ -357,7 +505,8 @@ function layoutPins() {
     );
     const fan = present.length > 1 && m.getZoom() >= CLUSTER_MAX_ZOOM - 1e-6;
     if (!fan) {
-      const rep = onScreen[0]!.item;
+      // 代表是占位时的那一枚。它在画面上时就画在它自己的坐标，数量才和碰撞范围对得上。
+      const rep = (onScreen.find((point) => point === cluster[0]) ?? onScreen[0])!.item;
       for (const pin of items) {
         setShown(pin, pin === rep);
         placePin(pin, 0, 0);
@@ -395,16 +544,27 @@ function layoutPins() {
     }
     cx /= onScreen.length;
     cy /= onScreen.length;
-    const offsets = ringOffsets(present.length);
     const shown = new Set<Pin>();
-    present.forEach((scene, index) => {
+    const reps: Pin[] = [];
+    const fanAnchors: { x: number; y: number }[] = [];
+    for (const scene of present) {
       const rep = scene.find((pin) => onScreen.some((point) => point.item === pin))!;
-      shown.add(rep);
       const at = onScreen.find((point) => point.item === rep)!;
-      const anchorX = at.x;
-      const anchorY = at.y + THUMB_H / 2;
+      reps.push(rep);
+      fanAnchors.push({ x: at.x, y: at.y + THUMB_H / 2 });
+    }
+    const offsets = ringShifts(
+      cx,
+      cy,
+      fanAnchors,
+      present.map((scene) => scene.length),
+    );
+    present.forEach((scene, index) => {
+      const rep = reps[index]!;
+      shown.add(rep);
+      const anchor = fanAnchors[index]!;
       const shift = offsets[index] ?? { x: 0, y: 0 };
-      placePin(rep, Math.round(cx + shift.x - anchorX), Math.round(cy + shift.y - anchorY));
+      placePin(rep, Math.round(cx + shift.x - anchor.x), Math.round(cy + shift.y - anchor.y));
       for (const pin of scene) {
         if (pin !== rep) placePin(pin, 0, 0);
         nextMembers.set(pin.spot.id, scene);
@@ -429,8 +589,10 @@ function layoutPins() {
       }
     });
     for (const pin of items) setShown(pin, shown.has(pin));
+    fans.push({ reps, cx, cy });
   }
 
+  settleFans(m, fans, nextMembers);
   membersOf = nextMembers;
   applyLocateHighlight();
 }
