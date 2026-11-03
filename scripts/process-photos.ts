@@ -5,6 +5,7 @@
  *   node scripts/process-photos.ts [目录] [原文件名=输出名 ...]
  *     [--bangumi 100444] [--out dist-photos]
  *     [--spots photos/imported-spots.json] [--map photos/map.json]
+ *     [--format jpeg|webp]
  *
  * 目录默认 photos/。输出名按这个顺序决定（后面的覆盖前面的）：
  *   1. --spots 里的 anitabiPointId，没有则用 spot id。文件名取 photo 路径或 file 字段。
@@ -14,12 +15,13 @@
  *
  * 大图最长边 1280（不放大），JPEG 质量 82；缩略图从大图再缩，最长边 320，质量 78。
  * 都是渐进式、mozjpeg、sRGB，不保留 EXIF/GPS。
- * 输出：<out>/<bangumiId>/<name>.jpg 和 <out>/<bangumiId>/thumb/<name>.jpg
+ * --format webp 时改出 WebP：大图质量 80，缩略图质量 75，同样 sRGB、不保留元数据。默认 jpeg。
+ * 输出：<out>/<bangumiId>/<name>.<jpg|webp> 和 <out>/<bangumiId>/thumb/<name>.<jpg|webp>
  * 另外写 <out>/capture.json，留下处理前读到的 GPS 和拍摄时间。
  */
 import { access, mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
 import { embeddedMetaKind, readPhotoCapture, type PhotoCapture } from "./lib/exif.ts";
 
 const CDN = "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi";
@@ -29,7 +31,8 @@ const EXT = new Set([".jpg", ".jpeg", ".heic", ".heif", ".png", ".tif", ".tiff",
 
 const USAGE = `用法: node scripts/process-photos.ts [目录] [原文件名=输出名 ...]
             [--bangumi 100444] [--out dist-photos]
-            [--spots photos/imported-spots.json] [--map photos/map.json]`;
+            [--spots photos/imported-spots.json] [--map photos/map.json]
+            [--format jpeg|webp]`;
 
 interface Assignment {
   name: string;
@@ -48,7 +51,7 @@ interface Done {
 }
 
 const args = process.argv.slice(2);
-const OPTS = new Set(["--bangumi", "--out", "--spots", "--map"]);
+const OPTS = new Set(["--bangumi", "--out", "--spots", "--map", "--format"]);
 
 function opt(name: string): string | null {
   const i = args.indexOf(name);
@@ -159,30 +162,38 @@ async function exists(path: string) {
   }
 }
 
+type Format = "jpeg" | "webp";
+
 function jpeg(quality: number) {
   return { quality, progressive: true as const, mozjpeg: true, optimizeCoding: true };
 }
 
-async function renderFull(input: string) {
-  return sharp(input, { failOn: "none" })
+function encode(image: Sharp, format: Format, kind: "full" | "thumb") {
+  if (format === "webp") return image.webp({ quality: kind === "full" ? 80 : 75, effort: 6 });
+  return image.jpeg(jpeg(kind === "full" ? 82 : 78));
+}
+
+async function renderFull(input: string, format: Format) {
+  const image = sharp(input, { failOn: "none" })
     .rotate()
     .resize({ width: FULL, height: FULL, fit: "inside", withoutEnlargement: true })
-    .toColorspace("srgb")
-    .jpeg(jpeg(82))
-    .toBuffer();
+    .toColorspace("srgb");
+  return encode(image, format, "full").toBuffer();
 }
 
-async function renderThumb(full: Buffer) {
-  return sharp(full)
+async function renderThumb(full: Buffer, format: Format) {
+  const image = sharp(full)
     .resize({ width: THUMB, height: THUMB, fit: "inside", withoutEnlargement: true })
-    .toColorspace("srgb")
-    .jpeg(jpeg(78))
-    .toBuffer();
+    .toColorspace("srgb");
+  return encode(image, format, "thumb").toBuffer();
 }
 
-async function leftover(path: string): Promise<string | null> {
-  const kind = await embeddedMetaKind(path);
-  if (kind) return kind;
+async function leftover(path: string, format: Format): Promise<string | null> {
+  // exifr 不认 WebP；WebP 的 EXIF/XMP/ICC 块由下面的 sharp metadata 检查。
+  if (format === "jpeg") {
+    const kind = await embeddedMetaKind(path);
+    if (kind) return kind;
+  }
   const meta = await sharp(path).metadata();
   if (meta.exif?.length) return "EXIF";
   if (meta.icc?.length || meta.hasProfile) return "ICC";
@@ -197,10 +208,10 @@ function kb(bytes: number) {
   return `${(bytes / 1024).toFixed(1)}KB`;
 }
 
-function urls(bangumiId: number, name: string) {
+function urls(bangumiId: number, name: string, ext: string) {
   return {
-    photo: `${CDN}/${bangumiId}/${name}.jpg`,
-    photoThumb: `${CDN}/${bangumiId}/thumb/${name}.jpg`,
+    photo: `${CDN}/${bangumiId}/${name}.${ext}`,
+    photoThumb: `${CDN}/${bangumiId}/thumb/${name}.${ext}`,
   };
 }
 
@@ -220,6 +231,14 @@ if (bangumiFlag && !Number.isInteger(bangumiOverride)) {
   console.error(`--bangumi 不是整数：${bangumiFlag}`);
   process.exit(1);
 }
+
+const formatFlag = opt("--format") ?? "jpeg";
+if (formatFlag !== "jpeg" && formatFlag !== "webp") {
+  console.error(`--format 只能是 jpeg 或 webp：${formatFlag}`);
+  process.exit(1);
+}
+const format: Format = formatFlag;
+const ext = format === "webp" ? "webp" : "jpg";
 
 const spotsArg = opt("--spots");
 const mapArg = opt("--map");
@@ -309,19 +328,19 @@ for (const job of jobs) {
     console.warn(`${file} 的 EXIF 读失败，仍会缩图：${(e as Error).message}`);
   }
 
-  const { photo, photoThumb } = urls(bangumiId, name);
-  const fullPath = join(outDir, String(bangumiId), `${name}.jpg`);
-  const thumbPath = join(outDir, String(bangumiId), "thumb", `${name}.jpg`);
+  const { photo, photoThumb } = urls(bangumiId, name, ext);
+  const fullPath = join(outDir, String(bangumiId), `${name}.${ext}`);
+  const thumbPath = join(outDir, String(bangumiId), "thumb", `${name}.${ext}`);
   try {
-    const fullBuf = await renderFull(input);
-    const thumbBuf = await renderThumb(fullBuf);
+    const fullBuf = await renderFull(input, format);
+    const thumbBuf = await renderThumb(fullBuf, format);
     await mkdir(dirname(fullPath), { recursive: true });
     await mkdir(dirname(thumbPath), { recursive: true });
     await writeFile(fullPath, fullBuf);
     await writeFile(thumbPath, thumbBuf);
     let dirty: string | null = null;
     for (const written of [fullPath, thumbPath]) {
-      const why = await leftover(written);
+      const why = await leftover(written, format);
       if (why) dirty = `${written} 仍带有${why}`;
     }
     if (dirty) {
