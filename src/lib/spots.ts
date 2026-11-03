@@ -41,6 +41,8 @@ const WORK_BY_BANGUMI: Record<number, { key: string; name: string }> = {
   485: { key: "haruhi", name: "凉宫春日系列" },
   1606: { key: "haruhi", name: "凉宫春日系列" },
   3375: { key: "haruhi", name: "凉宫春日系列" },
+  394260: { key: "bokuyaba", name: "我心里危险的东西" },
+  441795: { key: "bokuyaba", name: "我心里危险的东西" },
 };
 
 function workOf(spot: Spot): { key: string; name: string } {
