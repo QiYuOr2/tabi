@@ -1,11 +1,12 @@
 /**
  * 按作品 + 地点名，从 anitabi 拉地标列表做模糊匹配，输出候选和坐标。
  *
- * 用法：
- *   node scripts/match-anitabi.ts <bangumiId|作品名> <地点名> [--top 5] [--json]
+ * 用法（在仓库根目录）：
+ *   pnpm match -- <bangumiId|作品名> <地点名> [--top 5] [--json]
+ *   node packages/intake/src/match-anitabi.ts <bangumiId|作品名> <地点名>
  * 例：
- *   node scripts/match-anitabi.ts 115908 宇治橋
- *   node scripts/match-anitabi.ts 上低音号 京都音乐厅
+ *   pnpm match -- 115908 宇治橋
+ *   pnpm match -- 上低音号 京都音乐厅
  */
 import {
   getLite,
@@ -16,7 +17,7 @@ import {
 } from "./lib/anitabi.ts";
 import { similarity } from "./lib/fuzzy.ts";
 
-const args = process.argv.slice(2);
+const args = process.argv.slice(2).filter((a) => a !== "--");
 const flag = (name: string) => args.includes(name);
 const opt = (name: string, def: string) => {
   const i = args.indexOf(name);
@@ -28,7 +29,7 @@ const positional = args.filter(
 const [animeArg, pointName] = positional;
 if (!animeArg || !pointName) {
   console.error(
-    "用法: node scripts/match-anitabi.ts <bangumiId|作品名> <地点名> [--top 5] [--json]",
+    "用法: pnpm match -- <bangumiId|作品名> <地点名> [--top 5] [--json]",
   );
   process.exit(1);
 }

@@ -2,7 +2,7 @@
 
 > 状态：待办（方案），日期 2026-11-03。
 > 目标：把现在由 AI agent 临场完成的「巡礼照片入库」，改成 tabi 仓库里一条固定的 Node/TypeScript 脚本 `pnpm intake`。流程固定为 11 步，只有两步调用视觉模型，两步由人在本地网页上确认。
-> 现行规则见 [skills/pilgrimage-photo-intake/SKILL.md](skills/pilgrimage-photo-intake/SKILL.md)，数据字段以 `src/types/spot.ts` 为准。本文只做设计，不改现有流程。
+> 现行规则见 [skills/pilgrimage-photo-intake/SKILL.md](skills/pilgrimage-photo-intake/SKILL.md)，数据字段以 `apps/web/src/types/spot.ts` 为准。本文只做设计，不改现有流程。
 
 ## 1. 为什么要改
 
@@ -13,10 +13,10 @@
 
 | 环节 | 选型 | 理由 |
 | --- | --- | --- |
-| 运行方式 | `scripts/intake.ts`，逻辑放在 `scripts/intake/`，`package.json` 加 `"intake": "node scripts/intake.ts"` | 和现有 `photos:process`、`match` 脚本一样，用 Node 直接运行 TS，不加构建步骤和新依赖管理 |
-| 图像处理（切图、转正、旋转、裁剪、缩放、WebP） | sharp（仓库已有） | 现有 `scripts/process-photos.ts` 已经用它出图；`.rotate()` 按 EXIF 转正，输出时默认去掉全部元数据 |
-| EXIF 读取（拍摄时间、方向） | exifr（仓库已有），复用 `scripts/lib/exif.ts` | 现成的时区换算逻辑可以直接用 |
-| anitabi / Bangumi | 复用 `scripts/lib/anitabi.ts`（`getPointsDetail`、`searchBangumi`、`screenshotUrl`） | 接口和坐标规则已经验证过 |
+| 运行方式 | `packages/intake/src/intake.ts`，逻辑放在 `packages/intake/src/`。根 `package.json` 加 `"intake": "pnpm --filter @tabi/intake intake --"`，包内脚本 `"intake": "node src/intake.ts"`（等同 `node packages/intake/src/intake.ts`） | 和现有 `photos:process`、`match` 一样，用 Node 直接运行 TS，不加构建步骤。脚本放在 `@tabi/intake`，目前还没实现 |
+| 图像处理（切图、转正、旋转、裁剪、缩放、WebP） | sharp（`@tabi/intake` 已有） | 现有 `packages/intake/src/process-photos.ts` 已经用它出图；`.rotate()` 按 EXIF 转正，输出时默认去掉全部元数据 |
+| EXIF 读取（拍摄时间、方向） | exifr（`@tabi/intake` 已有），复用 `packages/intake/src/lib/exif.ts` | 现成的时区换算逻辑可以直接用 |
+| anitabi / Bangumi | 复用 `packages/intake/src/lib/anitabi.ts`（`getPointsDetail`、`searchBangumi`、`screenshotUrl`） | 接口和坐标规则已经验证过 |
 | 识别作品 | trace.moe HTTP API（Node 自带 `fetch`） | 免费，按截图直接给出作品和集数 |
 | 视觉模型 | `@google/genai` 调 Gemini 3.1 Flash-Lite，用 `responseMimeType: "application/json"` 加 `responseJsonSchema` 约束输出 | 免费层就够这个用量；输出结构固定，脚本可以直接解析 |
 | 预筛 | sharp 算感知哈希（dHash） | anitabi 截图和对比图的动画半张通常是同一帧，哈希距离就能排出前 10，不需要 OpenCV |
@@ -121,7 +121,7 @@ R 是实拍，可用来辅助判断。只输出 JSON。
 ### 10 发布（git + fetch）
 1. **推图床**：在本地 `blog-image` 工作副本里 `git pull --rebase`，复制图片（已存在的路径跳过），然后提交并推送到 `master`。
 2. **jsDelivr 检查**：逐个请求 `https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/<path>`。返回 403 或 404 时请求 `https://purge.jsdelivr.net/gh/QiYuOr2/blog-image@master/<path>`，等待后重试，最多 5 轮。仍有地址失败就中止，不写地图数据。
-3. **写数据**：在 tabi 工作副本里 `git pull --rebase`，往 `src/data/spots.json` 只追加 id 不存在的地点；`source: "anitabi"`，坐标取 anitabi 的。同一系列的新作品，把 ID 加进 `src/data/works.json` 对应条目。
+3. **写数据**：在 tabi 工作副本里 `git pull --rebase`，往 `apps/web/src/data/spots.json` 只追加 id 不存在的地点；`source: "anitabi"`，坐标取 anitabi 的。同一系列的新作品，把 ID 加进 `apps/web/src/data/works.json` 对应条目。
 4. **推地图**：提交并推送到 `main`。推送被拒就重新拉取、重新追加、再推，不 force push。commit 说明不写坐标。
 
 ### 11 汇报
@@ -162,7 +162,7 @@ R 是实拍，可用来辅助判断。只输出 JSON。
 - [ ] 加 `pnpm intake` 入口、`.intake/` 缓存目录和 `--from` 断点
 
 **阶段 1：图像**
-- [ ] 切图（第 2 步）、原图转正和拍摄时间（第 7 步），复用 `scripts/lib/exif.ts`
+- [ ] 切图（第 2 步）、原图转正和拍摄时间（第 7 步），复用 `packages/intake/src/lib/exif.ts`
 - [ ] 出图和元数据自检（第 9 步），从 `process-photos.ts` 抽成公用函数
 
 **阶段 2：匹配**

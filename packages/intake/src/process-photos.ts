@@ -1,13 +1,14 @@
 /**
  * 把原图收成 blog-image 仓库用的实拍图和缩略图：先读 EXIF，再按方向转正、缩小、去掉全部元数据。
  *
- * 用法：
- *   node scripts/process-photos.ts [目录] [原文件名=输出名 ...]
+ * 用法（在仓库根目录；路径相对仓库根目录）：
+ *   pnpm photos:process -- [目录] [原文件名=输出名 ...]
  *     [--bangumi 100444] [--out dist-photos]
  *     [--spots photos/imported-spots.json] [--map photos/map.json]
  *     [--format jpeg|webp]
+ *   node packages/intake/src/process-photos.ts ...
  *
- * 目录默认 photos/。输出名按这个顺序决定（后面的覆盖前面的）：
+ * 目录默认仓库根的 photos/。输出名按这个顺序决定（后面的覆盖前面的）：
  *   1. --spots 里的 anitabiPointId，没有则用 spot id。文件名取 photo 路径或 file 字段。
  *      未指定 --spots 时，如果 photos/imported-spots.json 存在就用它。
  *   2. --map：{ "bangumiId": 100444, "files": { "DSC001.jpg": "51i51ynk8" } }
@@ -20,16 +21,17 @@
  * 另外写 <out>/capture.json，留下处理前读到的 GPS 和拍摄时间。
  */
 import { access, mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import sharp, { type Sharp } from "sharp";
 import { embeddedMetaKind, readPhotoCapture, type PhotoCapture } from "./lib/exif.ts";
+import { fromRoot } from "./lib/repo.ts";
 
 const CDN = "https://cdn.jsdelivr.net/gh/QiYuOr2/blog-image@master/tabi";
 const FULL = 1280;
 const THUMB = 320;
 const EXT = new Set([".jpg", ".jpeg", ".heic", ".heif", ".png", ".tif", ".tiff", ".webp", ".avif"]);
 
-const USAGE = `用法: node scripts/process-photos.ts [目录] [原文件名=输出名 ...]
+const USAGE = `用法: pnpm photos:process -- [目录] [原文件名=输出名 ...]
             [--bangumi 100444] [--out dist-photos]
             [--spots photos/imported-spots.json] [--map photos/map.json]
             [--format jpeg|webp]`;
@@ -50,7 +52,7 @@ interface Done {
   photoThumb: string;
 }
 
-const args = process.argv.slice(2);
+const args = process.argv.slice(2).filter((a) => a !== "--");
 const OPTS = new Set(["--bangumi", "--out", "--spots", "--map", "--format"]);
 
 function opt(name: string): string | null {
@@ -223,8 +225,8 @@ if (dirs.length > 1 || args.includes("-h") || args.includes("--help")) {
   process.exit(dirs.length > 1 ? 1 : 0);
 }
 
-const dir = resolve(dirs[0] ?? "photos");
-const outDir = resolve(opt("--out") ?? "dist-photos");
+const dir = fromRoot(dirs[0] ?? "photos");
+const outDir = fromRoot(opt("--out") ?? "dist-photos");
 const bangumiFlag = opt("--bangumi");
 const bangumiOverride = bangumiFlag ? Number(bangumiFlag) : null;
 if (bangumiFlag && !Number.isInteger(bangumiOverride)) {
@@ -248,8 +250,9 @@ const byFile = new Map<string, Assignment>();
 
 try {
   const spotsPath = spotsArg ?? "photos/imported-spots.json";
-  if (spotsArg || (await exists(spotsPath))) {
-    const data = await readJson(resolve(spotsPath));
+  const spotsFile = fromRoot(spotsPath);
+  if (spotsArg || (await exists(spotsFile))) {
+    const data = await readJson(spotsFile);
     if (!Array.isArray(data)) throw new Error(`${spotsPath} 应该是 import-photos 写出的数组`);
     const loaded = fromRecords(data);
     for (const [file, assignment] of loaded.map) byFile.set(file, assignment);
@@ -258,7 +261,7 @@ try {
     }
   }
   if (mapArg) {
-    const data = await readJson(resolve(mapArg));
+    const data = await readJson(fromRoot(mapArg));
     if (!isRecord(data)) throw new Error(`${mapArg} 应该是对象`);
     for (const [file, assignment] of fromMapFile(data)) byFile.set(file, assignment);
   }

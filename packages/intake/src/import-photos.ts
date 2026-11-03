@@ -3,19 +3,21 @@
  *   - 有 GPS → 生成 source="exif" 的 Spot，写到 --out（默认 photos/imported-spots.json）
  *   - 没 GPS → 写到 --pending（默认 photos/pending.json），之后用 match-anitabi 或手动补坐标
  *
- * 用法：
- *   node scripts/import-photos.ts <目录> [--out photos/imported-spots.json] [--pending photos/pending.json]
- *                                  [--photo-base /photos/] [--anime 作品名] [--bangumi 115908]
+ * 用法（在仓库根目录；路径相对仓库根目录）：
+ *   pnpm import-photos -- <目录> [--out photos/imported-spots.json] [--pending photos/pending.json]
+ *                         [--photo-base /photos/] [--anime 作品名] [--bangumi 115908]
+ *   node packages/intake/src/import-photos.ts <目录> ...
  *
  * animeName / pointName 无法从 EXIF 得到：可用 --anime/--bangumi 给整批指定作品，地点名先用文件名占位。
- * 注意：不会改 src/data/spots.json，确认后再手动合并。
+ * 注意：不会改 apps/web/src/data/spots.json，确认后再手动合并。
  */
 import { readdir, writeFile, mkdir } from "node:fs/promises";
-import { basename, extname, join, resolve, dirname } from "node:path";
+import { basename, extname, join, dirname } from "node:path";
 import { readPhotoCapture } from "./lib/exif.ts";
-import type { PendingPhoto, Spot } from "../src/types/spot.ts";
+import { fromRoot } from "./lib/repo.ts";
+import type { PendingPhoto, Spot } from "../../../apps/web/src/types/spot.ts";
 
-const args = process.argv.slice(2);
+const args = process.argv.slice(2).filter((a) => a !== "--");
 const opt = (name: string, def: string | null = null) => {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] ? args[i + 1]! : def;
@@ -23,25 +25,26 @@ const opt = (name: string, def: string | null = null) => {
 const dir = args.find((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
 if (!dir) {
   console.error(
-    "用法: node scripts/import-photos.ts <目录> [--out ...] [--pending ...] [--photo-base ...]",
+    "用法: pnpm import-photos -- <目录> [--out ...] [--pending ...] [--photo-base ...]",
   );
   process.exit(1);
 }
-const outPath = resolve(opt("--out", "photos/imported-spots.json")!);
-const pendingPath = resolve(opt("--pending", "photos/pending.json")!);
+const outPath = fromRoot(opt("--out", "photos/imported-spots.json")!);
+const pendingPath = fromRoot(opt("--pending", "photos/pending.json")!);
 const photoBase = opt("--photo-base", "/photos/")!;
 const animeName = opt("--anime");
 const bangumiRaw = opt("--bangumi");
 const bangumiId = bangumiRaw ? Number(bangumiRaw) : null;
 
 const EXT = new Set([".jpg", ".jpeg", ".heic", ".heif", ".png", ".tif", ".tiff", ".webp", ".avif"]);
-const files = (await readdir(dir)).filter((f) => EXT.has(extname(f).toLowerCase())).sort();
+const inputDir = fromRoot(dir);
+const files = (await readdir(inputDir)).filter((f) => EXT.has(extname(f).toLowerCase())).sort();
 
 const spots: Spot[] = [];
 const pending: PendingPhoto[] = [];
 
 for (const file of files) {
-  const full = join(dir, file);
+  const full = join(inputDir, file);
   let lat: number | null = null;
   let lng: number | null = null;
   let takenAt: string | null = null;

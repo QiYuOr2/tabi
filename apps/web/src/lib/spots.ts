@@ -26,7 +26,7 @@ export interface AnimeGroup {
   spots: Spot[];
 }
 
-/** src/data/works.json 里的一条系列。bangumiIds 最早一季在前。 */
+/** apps/web/src/data/works.json 里的一条系列。bangumiIds 最早一季在前。 */
 interface MergedWork {
   key: string;
   name: string;
@@ -36,7 +36,7 @@ interface MergedWork {
 /**
  * 多个 bangumi 条目属于同一作品。图例、定位和显隐按 key 合并，显示名用 name。
  * 地点上的 bangumiId 不动，anitabi 链接仍指向各自的条目。
- * 系列名单只改 src/data/works.json。
+ * 系列名单只改 apps/web/src/data/works.json。
  */
 function workByBangumi(list: readonly MergedWork[]): Record<number, { key: string; name: string }> {
   const byId: Record<number, { key: string; name: string }> = {};

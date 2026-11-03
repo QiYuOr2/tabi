@@ -15,12 +15,12 @@
 | 工具链 | Vite+ 1.4.0（`vite-plus`，`vp` CLI）               | **[已验证]** `vp create vite -- --template vue-ts` 创建，`vp dev` / `vp build` / `vp check` 均通过 |
 | 页面   | Vue 3 + TypeScript + UnoCSS（presetWind3 + reset） |                                                                                                    |
 | 地图   | MapLibre GL JS + OpenFreeMap 公共样式              | 无 key。默认 Liberty，可用 `VITE_MAP_STYLE_URL` 换官方其它样式                                     |
-| 数据   | 仓库内 `src/data/spots.json`                       | 先不接数据库                                                                                       |
+| 数据   | 仓库内 `apps/web/src/data/spots.json`              | 先不接数据库                                                                                       |
 | 脚本   | Node 24 直接跑 `.ts`（内置 type stripping）        | 不需要 tsx                                                                                         |
 
 ## 3. 数据结构
 
-见 `src/types/spot.ts`：
+见 `apps/web/src/types/spot.ts`：
 
 ```ts
 interface Spot {
@@ -45,8 +45,8 @@ interface Spot {
 
 ## 4. 定位流程
 
-1. **EXIF**：`node scripts/import-photos.ts <目录>` 用 exifr 读 GPS 和拍摄时间。有坐标 → `source: "exif"`；没坐标 → `photos/pending.json`。**[已验证]** 用两张合成测试图（一张带 GPS、一张不带）跑通。
-2. **anitabi 匹配**：`node scripts/match-anitabi.ts <bangumiId|作品名> <地点名>`，拉 `points/detail` 做模糊匹配（NFKC 归一化 + 包含 + bigram Dice），输出候选和坐标。**[已验证]** `115908 宇治橋`、`115908 京都音乐厅` 都能命中。
+1. **EXIF**：`pnpm import-photos -- <目录>`（`packages/intake/src/import-photos.ts`）用 exifr 读 GPS 和拍摄时间。有坐标 → `source: "exif"`；没坐标 → `photos/pending.json`。**[已验证]** 用两张合成测试图（一张带 GPS、一张不带）跑通。
+2. **anitabi 匹配**：`pnpm match -- <bangumiId|作品名> <地点名>`（`packages/intake/src/match-anitabi.ts`），拉 `points/detail` 做模糊匹配（NFKC 归一化 + 包含 + bigram Dice），输出候选和坐标。**[已验证]** `115908 宇治橋`、`115908 京都音乐厅` 都能命中。
 3. **地理编码 / 手动**：anitabi 上没有或没坐标的，以后再选一个允许的地理编码（不再用 Mapbox Geocoding），或直接手动标。标注页还没做。
 
 ### anitabi 坐标字段（重要）
