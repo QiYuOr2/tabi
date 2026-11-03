@@ -132,9 +132,10 @@ R 是实拍，可用来辅助判断。只输出 JSON，不要解释。
 
 | 平台 | 结论 | 理由 |
 | --- | --- | --- |
-| n8n（自部署） | 推荐 | Code 节点能跑 Node/Python，可以装 OpenCV 和 sharp；有 Wait/表单节点用于人工确认；凭证集中管理 |
-| Dify（自部署） | 可选 | LLM 节点和提示词管理做得更好；重度图像处理建议拆成独立的 HTTP 小服务 |
-| Coze | 不推荐 | 代码节点限制多，难以运行 OpenCV，处理大文件和管理 GitHub 凭证都不方便 |
+| n8n 社区版（自部署） | 推荐 | Code 节点能跑 Node/Python，自部署可放开外部模块；有 Wait/表单节点用于人工确认；凭证集中管理。默认在作者本地电脑上用 Docker 按需启动，费用为 0（见第 8 节） |
+| Dify 社区版（自部署） | 可选 | LLM 节点和提示词管理做得更好，但组件多（十几个容器，最低 2 核 4 GB），本地按需启停偏重；重度图像处理同样要拆成独立服务 |
+| n8n Cloud / Dify Cloud | 不推荐 | 按月付费（€20 起 / $590 每年），而且云端代码节点装不了 OpenCV，还是要另找地方跑图像服务；原图也得先传上云 |
+| Coze | 不推荐 | 代码节点只能用少数内置依赖（JS 仅 dayjs、lodash，Python 仅 numpy 等），单节点 60 秒、入参 2 MB，跑不了 OpenCV，也处理不了原图 |
 
 建议把第 2、8、9 步打包成一个独立的小服务（容器，HTTP 接口），由工作流调用。这样以后换平台时，图像处理部分不用重写。
 
@@ -151,11 +152,87 @@ R 是实拍，可用来辅助判断。只输出 JSON，不要解释。
 - 每个节点的输出都按 `batchId` 缓存，失败后从断点重跑，不会重复调用 LLM 和 trace.moe。
 - 发布严格按「先图床、再验证、后数据」的顺序执行，任何一步失败，后面的步骤都不执行。
 
-## 8. 成本估算（推测）
+## 8. 费用对比与推荐
 
-- **LLM**：每张对比图大约 1 到 2 次视觉调用，每次附带 10 张左右的小图，每批二三十张图的花费很低。预筛能大幅减少候选数量，是省钱的关键。
-- **trace.moe**：只在识别作品和 `noMatch` 时调用，匿名额度通常够用。
-- **其他**：GitHub、jsDelivr 和 Vercel 都在免费额度内。自部署平台需要一台常驻的小机器。
+> 价格均为 as of 2026-11，按官网标价（不含税），来源见本节末尾。用量假设：每月 1～4 批、每批 5～40 张，按每月 100 张上限计算。标注「已核实」的数字来自官网页面，「推测」为按公开计费规则估算。
+
+### 8.1 每张照片的模型用量（推测）
+
+- **第 5 步精排**：动画半张、实拍半张，加预筛后的 10 张候选截图，共 12 张图，每张先缩到 384px 以内，再加约 500 token 提示词、约 300 token 输出。按各家图片计费规则，输入约 2,300～3,600 token。
+- **第 3 步兜底**：只在没给作品名且 trace.moe 不确定时调用。按 30% 的照片需要计算，每次 1 张图，用量很小。
+- **不做预筛**：把 60 张候选全塞进一次调用，输入涨到约 1.6 万 token，费用约是预筛时的 3 倍，仍然很低。预筛的价值主要在于提高准确率，省钱是次要的。
+- **其他节点**：第 8、9 步的 OpenCV 和出图、第 10 步的 GitHub API 都不花模型费用。
+
+### 8.2 视觉模型单价与月费
+
+| 模型 | 输入 / 输出（每百万 token） | 每张约 | 每月 100 张约 | 免费额度 |
+| --- | --- | --- | --- | --- |
+| Gemini 3.1 Flash-Lite | $0.25 / $1.50（已核实） | $0.0014 | $0.14 | 免费层每天约 500 次请求、每分钟 15 次（第三方实测，以 AI Studio 显示为准） |
+| Gemini 3.5 Flash-Lite | $0.30 / $2.50（已核实） | $0.0020 | $0.20 | 同上 |
+| Gemini 2.5 Flash-Lite | $0.10 / $0.40（已核实） | $0.0005 | $0.05 | 官方说明 2.5 系列只对以前用过的账号开放，新账号不一定能用 |
+| Claude Haiku 5.5 | $0.10 / $0.50（已核实） | $0.0005 | $0.05 | 无 |
+| GPT-5.4-nano | $0.20 / $1.25（已核实） | $0.0010 | $0.10 | 无 |
+| Qwen3-VL-Plus（国际站） | $0.20 / $1.60（已核实） | $0.0010 | $0.10 | 新加坡区开通后 90 天内赠 100 万 token |
+| GPT-4.1-mini | $0.40 / $1.60（已核实） | $0.0019 | $0.19 | 无 |
+| Grok 4.3 | $1.25 / $2.50（已核实） | $0.0055 | $0.55 | 无；图片 token 数按 258/张推测 |
+| GPT-4o-mini | $0.15 / $0.60（已核实） | 约 $0.005 | 约 $0.5 | 无；单价低，但每张图按 2,833 token 起计，算下来反而贵 |
+
+- 每张的花费都是推测值，开了思考模式时输出 token 会多一些。即使把用量放大 3 倍，所有方案每月也都在 $2 以内。
+- **trace.moe**：匿名每月 100 次、并发 1（已核实，来自 `api.trace.moe/me` 的返回）。只在第 3 步和 `noMatch` 时调用，够用。
+- **Gemini 免费层**：请求会被用于改进 Google 的产品。发送的只是动画截图和本来就要公开的实拍缩小图，去掉了元数据、没有 GPS，可以接受。介意的话就开通付费，每月约 $0.15。
+
+### 8.3 平台方案排序（每月总费用 = 平台 + 计算 + 模型）
+
+| 排名 | 方案 | 每月费用 | 能否满足要求（人工确认 / OpenCV 和 sharp / GitHub 密钥） | 主要限制 |
+| --- | --- | --- | --- | --- |
+| 1 | **n8n 社区版，本地电脑 Docker 按需启动** + Gemini 3.1 Flash-Lite 免费层 | **$0**（付费兜底 ≤ $0.2） | 全部满足：Form/Wait 节点做确认，图像服务容器在同一台机器上，凭证存 n8n 本地 | 只能在电脑开着时跑；手机上提交不了 |
+| 1 | 本地脚本或 CLI，不用平台（即第 9 节的方案加上模型调用） | $0（模型同上） | 满足，在终端或本地网页里确认 | 没有可视化编排，改流程要改代码 |
+| 3 | GitHub Actions（公开仓库用标准 runner 免费）+ 脚本，在 Issue 或 PR 评论里确认 | $0（模型同上） | 基本满足，token 放仓库 Secrets | 输入要放进公开仓库或 Issue 附件，**原图必须先在本地去掉 GPS**；评论触发、排队，反馈慢 |
+| 4 | n8n 或 Dify 社区版，部署在 Oracle Cloud Always Free（Ampere A1，共 2 OCPU、12 GB） | $0 | 满足，常驻在线 | 2026 年 6 月额度已减半；注册要绑卡，热门区域常没有空余资源；闲置实例可能被回收（推测）；要自己维护和加 HTTPS |
+| 5 | Dify Cloud Sandbox（免费） | $0 | 不满足：云端代码节点跑不了 OpenCV，要另外部署图像服务 | 200 条消息额度是一次性的（可以改用自己的 key），每月 5,000 次 API 调用、3,000 次触发；原图要传上云 |
+| 6 | Vercel Hobby Functions 跑图像服务 | $0 | 只能做图像服务，不是工作流平台 | 请求体上限 4.5 MB，传不了原图；包体上限 250 MB（大函数 Beta 最高 5 GB），单次最长 300 秒，每月 4 CPU 小时；仅限个人非商业用途 |
+| 7 | Coze 免费版（coze.cn 每天登录领 1,500 积分，当天有效；coze.com 每天 10 credits） | $0 | 不满足，原因见第 5 节 | 积分用完就停服 |
+| 8 | n8n 社区版，部署在 Hetzner 等廉价 VPS | 约 €6/月起 | 满足，常驻在线 | 要付费，也要自己维护 |
+| 9 | n8n Cloud Starter | €20/月（按年付） | 不满足：云端 Code 节点不能装外部模块，图像服务要另外部署 | 每次执行最长 5 分钟，并发 5 |
+| 10 | Dify Cloud Professional | $590/年（约 $49/月） | 同 Dify Sandbox | 这个用量用不上它的额度 |
+
+### 8.4 推荐
+
+**默认方案：n8n 社区版在作者本地电脑上用 Docker 按需启动，配 Gemini 3.1 Flash-Lite 免费层。预计每月 $0；关闭免费层、改用付费时每月约 $0.15，上限按 $1 设。**
+
+- **适合低频使用**：每月最多 4 批，不需要 24 小时在线的服务器。原图本来就在本地，不用上传到任何云端，GPS 也就不会离开本机。
+- **图像服务**：第 2、8、9 步做成同一台机器上的容器（Python OpenCV 加 Pillow 或 sharp），n8n 通过 HTTP 调用。
+- **人工确认**：用 n8n 的 Form 或 Wait 节点，在本地网页上点选。
+- **发布**：第 10 步用 GitHub fine-grained token，存在 n8n 的凭证库里。
+- **模型兜底**：免费层超限或不想让数据用于改进产品时，切到付费的 Gemini 3.1 Flash-Lite 或 Claude Haiku 5.5，每月都不到 $0.2。
+- **以后想在手机上随时提交**：再把同一套 compose 迁到 Oracle Always Free，每月 $0；资源抢不到就用廉价 VPS，约 €6/月。
+- **不推荐 Cloud 版**：两家 Cloud 版都要额外部署图像服务，花钱反而更多。Coze 跑不了这条流程。
+
+### 8.5 价格来源（as of 2026-11）
+
+- n8n 定价：https://n8n.io/pricing/
+- n8n Code 节点外部模块（自部署配置）：https://docs.n8n.io/hosting/configuration/configuration-examples/modules-in-code-node/
+- Dify 定价：https://dify.ai/pricing
+- Dify 自部署配置要求：https://docs.dify.ai/en/getting-started/install-self-hosted/docker-compose
+- 扣子积分与套餐：https://docs.coze.cn/coze_pro_credits 、https://docs.coze.cn/guides_20260119_coze_premium_upgraded
+- 扣子代码节点与工作流限制：https://docs.coze.cn/guides_code_node 、https://docs.coze.cn/guides_workflow_limits
+- Coze 国际版 credits：https://docs.coze.com/guides/message_credits
+- Gemini API 定价：https://ai.google.dev/gemini-api/docs/pricing
+- Gemini 图片 token 计算：https://ai.google.dev/gemini-api/docs/image-understanding
+- Gemini 模型下线计划：https://ai.google.dev/gemini-api/docs/deprecations
+- Gemini 免费层限额（第三方实测，官方只在 AI Studio 显示）：https://aiplug.work/en/blog/gemini-free-tier-limits
+- OpenAI 定价：https://developers.openai.com/api/docs/pricing
+- OpenAI 图片 token 计算：https://developers.openai.com/api/docs/guides/images-vision
+- Anthropic 定价：https://platform.claude.com/docs/en/about-claude/pricing
+- Anthropic 图片 token 计算：https://platform.claude.com/docs/en/build-with-claude/vision
+- xAI 定价：https://docs.x.ai/docs/models
+- 阿里云百炼（Qwen）定价：https://www.alibabacloud.com/help/en/model-studio/model-pricing
+- trace.moe API：https://soruly.github.io/trace.moe-api/
+- GitHub Actions 计费：https://docs.github.com/en/billing/concepts/product-billing/github-actions
+- Vercel Functions 限制：https://vercel.com/docs/functions/limitations
+- Vercel Hobby 套餐：https://vercel.com/docs/plans/hobby
+- Oracle Always Free：https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm
+- Hetzner Cloud：https://www.hetzner.com/cloud/
 
 ## 9. 不用 AI 的兜底方案
 
@@ -164,7 +241,7 @@ R 是实拍，可用来辅助判断。只输出 JSON，不要解释。
 ## 10. 待定问题
 
 - 第 6 步自动通过的阈值，要先拿已入库的约 190 个地点回测，再确定。
-- 原图怎么进工作流：网页上传、网盘目录，还是本地脚本推送？
+- 原图怎么进工作流：按第 8 节的推荐在本地运行时，直接从本地目录读取；以后迁到云端时再定（网页上传还是网盘目录）。
 - 通知走什么渠道？人工确认在哪里完成：平台自带页面，还是聊天工具里的按钮？
 - 现有 `scripts/process-photos.ts` 是改造成服务，还是另写 Python 版本？
 - 旧作品的 JPEG 图片要不要统一成 WebP？在作者决定之前不动。
@@ -173,8 +250,9 @@ R 是实拍，可用来辅助判断。只输出 JSON，不要解释。
 
 **阶段 0：准备**
 - [ ] 用已入库的数据做一个回测集（对比图、正确的 pointId），给第 5、6 步调阈值用
-- [ ] 确定平台（n8n 或 Dify），确定部署位置
-- [ ] 申请 fine-grained GitHub token 和 LLM key
+- [ ] 按第 8 节，在作者本地电脑上用 Docker Compose 搭好 n8n 社区版和图像服务容器（按需启停）
+- [ ] 申请 fine-grained GitHub token 和 Gemini API key（先用免费层），在 AI Studio 确认项目的实际免费额度
+- [ ] 准备付费兜底：开通计费并设用量上限（$1/月），或者备一个 Claude Haiku 5.5 的 key
 
 **阶段 1：图像服务**
 - [ ] 切图接口（第 2 步）
