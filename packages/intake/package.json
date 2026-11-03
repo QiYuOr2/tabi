@@ -1,0 +1,20 @@
+{
+  "name": "@tabi/intake",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "import-photos": "node src/import-photos.ts",
+    "match": "node src/match-anitabi.ts",
+    "photos:process": "node src/process-photos.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "exifr": "^7.1.3",
+    "sharp": "^0.35.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "~6.0.3"
+  }
+}
