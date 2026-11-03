@@ -1,0 +1,27 @@
+[
+  {
+    "key": "fate-stay-night",
+    "name": "Fate/stay night 系列",
+    "bangumiIds": [290, 935, 95225, 109386, 109375, 175600]
+  },
+  {
+    "key": "shoushimin",
+    "name": "小市民系列",
+    "bangumiIds": [474906, 513018]
+  },
+  {
+    "key": "haruhi",
+    "name": "凉宫春日系列",
+    "bangumiIds": [485, 1606, 3375]
+  },
+  {
+    "key": "bokuyaba",
+    "name": "我心里危险的东西",
+    "bangumiIds": [394260, 441795]
+  },
+  {
+    "key": "euphonium",
+    "name": "吹响吧！上低音号系列",
+    "bangumiIds": [115908, 152091, 283643, 216372]
+  }
+]
