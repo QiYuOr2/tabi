@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { LngLatBounds, Map as MlMap, Marker, NavigationControl, Popup } from "maplibre-gl";
-import { createApp, onBeforeUnmount, onMounted, ref, shallowRef, type App } from "vue";
+import {
+  computed,
+  createApp,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  type App,
+} from "vue";
 import { clusterByDistance, THUMB_GAP, THUMB_H, THUMB_W, type ScreenPoint } from "../lib/cluster";
 import { imagePlan, prefetchImage } from "../lib/images";
 import {
@@ -12,7 +21,7 @@ import {
   syncMapOverview,
 } from "../lib/map";
 import { PhotoCreditControl } from "../lib/photo-credit-control";
-import { groupByAnime, spots } from "../lib/spots";
+import { groupByAnime, spots, type AnimeGroup } from "../lib/spots";
 import type { Spot } from "../types/spot";
 import SpotCard from "./SpotCard.vue";
 
@@ -32,6 +41,7 @@ function onLegendMedia() {
 
 function toggleLegend() {
   legendCollapsed.value = !legendCollapsed.value;
+  if (locateToast.value) void nextTick(() => placeLocateToast());
 }
 
 const groups = groupByAnime(spots);
@@ -422,6 +432,7 @@ function layoutPins() {
   }
 
   membersOf = nextMembers;
+  applyLocateHighlight();
 }
 
 function scheduleLayout() {
@@ -434,6 +445,7 @@ function scheduleLayout() {
 }
 
 function onThumbClick(m: MlMap, pin: Pin) {
+  cancelLocateHighlight();
   const members = membersOf.get(pin.spot.id) ?? [pin];
   const scenes = sceneGroups(members);
   if (scenes.length <= 1) {
@@ -523,14 +535,319 @@ function createThumb(spot: Spot) {
   return { button, badge };
 }
 
-function toggleGroup(key: string) {
-  const next = new Set(hidden.value);
-  if (next.has(key)) next.delete(key);
-  else next.add(key);
+function applyHidden(next: Set<string>) {
   hidden.value = next;
   const selected = pins.find((item) => item.spot.id === selectedId);
   if (selected && next.has(selected.group)) closePopup();
   scheduleLayout();
+}
+
+function toggleGroup(key: string) {
+  const next = new Set(hidden.value);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  applyHidden(next);
+}
+
+const shownGroupCount = computed(() => groups.filter((g) => !hidden.value.has(g.key)).length);
+const allShown = computed(() => shownGroupCount.value === groups.length);
+const noneShown = computed(() => shownGroupCount.value === 0);
+const allEyeLabel = computed(() => (allShown.value ? "隐藏全部" : "显示全部"));
+
+function toggleAllGroups() {
+  applyHidden(allShown.value ? new Set(groups.map((g) => g.key)) : new Set());
+}
+
+/** 图例眼睛的「仅显示此项」。右键或触屏长按打开，点空白、Esc、滚动关掉。 */
+const EYE_LONG_PRESS_MS = 500;
+const eyeMenu = ref<{ key: string; x: number; y: number } | null>(null);
+const eyeMenuEl = ref<HTMLElement>();
+const eyeMenuItem = ref<HTMLButtonElement>();
+let eyePressTimer = 0;
+let eyePressX = 0;
+let eyePressY = 0;
+let eyeMenuOpenedAt = 0;
+let ignoreEyeClickUntil = 0;
+let ignoreMenuClickUntil = 0;
+
+function closeEyeMenu() {
+  eyeMenu.value = null;
+}
+
+function openEyeMenu(point: { clientX: number; clientY: number }, key: string) {
+  const root = container.value?.parentElement;
+  if (!root) return;
+  const rect = root.getBoundingClientRect();
+  eyeMenuOpenedAt = performance.now();
+  eyeMenu.value = { key, x: point.clientX - rect.left, y: point.clientY - rect.top };
+  void nextTick(() => {
+    const rootNow = container.value?.parentElement;
+    const el = eyeMenuEl.value;
+    const menu = eyeMenu.value;
+    if (!rootNow || !el || !menu) return;
+    const bounds = rootNow.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    const margin = 8;
+    let x = menu.x;
+    let y = menu.y - box.height - margin;
+    if (y < margin) y = menu.y + margin;
+    if (x + box.width > bounds.width - margin) x = bounds.width - margin - box.width;
+    if (y + box.height > bounds.height - margin) y = bounds.height - margin - box.height;
+    eyeMenu.value = { key: menu.key, x: Math.max(margin, x), y: Math.max(margin, y) };
+    void nextTick(() => eyeMenuItem.value?.focus({ preventScroll: true }));
+  });
+}
+
+function showOnlyGroup(key: string) {
+  if (performance.now() < ignoreMenuClickUntil) return;
+  const next = new Set<string>();
+  for (const group of groups) if (group.key !== key) next.add(group.key);
+  closeEyeMenu();
+  applyHidden(next);
+}
+
+function onEyeClick(key: string) {
+  if (performance.now() < ignoreEyeClickUntil) return;
+  toggleGroup(key);
+}
+
+function onEyeContextMenu(ev: MouseEvent, key: string) {
+  ev.preventDefault();
+  if (eyeMenu.value?.key === key && performance.now() - eyeMenuOpenedAt < 400) return;
+  openEyeMenu(ev, key);
+}
+
+function onEyePointerDown(ev: PointerEvent, key: string) {
+  if (ev.pointerType === "mouse") return;
+  window.clearTimeout(eyePressTimer);
+  eyePressX = ev.clientX;
+  eyePressY = ev.clientY;
+  eyePressTimer = window.setTimeout(() => {
+    eyePressTimer = 0;
+    const now = performance.now();
+    ignoreEyeClickUntil = now + 800;
+    ignoreMenuClickUntil = now + 400;
+    openEyeMenu({ clientX: eyePressX, clientY: eyePressY }, key);
+  }, EYE_LONG_PRESS_MS);
+}
+
+function onEyePointerMove(ev: PointerEvent) {
+  if (!eyePressTimer) return;
+  if (Math.hypot(ev.clientX - eyePressX, ev.clientY - eyePressY) <= 10) return;
+  window.clearTimeout(eyePressTimer);
+  eyePressTimer = 0;
+}
+
+function onEyePointerEnd() {
+  window.clearTimeout(eyePressTimer);
+  eyePressTimer = 0;
+}
+
+function onDocPointerDown(ev: PointerEvent) {
+  if (!eyeMenu.value) return;
+  const menu = eyeMenuEl.value;
+  if (menu && ev.target instanceof Node && menu.contains(ev.target)) return;
+  closeEyeMenu();
+}
+
+function onDocKeydown(ev: KeyboardEvent) {
+  if (ev.key === "Escape" && eyeMenu.value) closeEyeMenu();
+}
+
+function onAnyScroll() {
+  if (eyeMenu.value) closeEyeMenu();
+}
+
+/** 定位后短时间压暗其他作品，并提示地点数。点图钉或用户拖动/缩放会取消高亮。 */
+const LOCATE_HIGHLIGHT_MS = 1800;
+const LOCATE_TOAST_MS = 2000;
+let locateKey: string | null = null;
+let locateToken = 0;
+let locateTimer = 0;
+let toastTimer = 0;
+const locateToast = ref<string | null>(null);
+const locateToastKey = ref(0);
+const locateToastPlaced = ref(false);
+const locateToastStyle = ref({ top: "10px", left: "50%", transform: "translateX(-50%)" });
+const locateToastEl = ref<HTMLElement>();
+
+function dismissToast() {
+  window.clearTimeout(toastTimer);
+  toastTimer = 0;
+  locateToast.value = null;
+}
+
+function rectsOverlap(a: DOMRect, b: DOMRect, margin: number) {
+  return (
+    a.left < b.right + margin &&
+    a.right > b.left - margin &&
+    a.top < b.bottom + margin &&
+    a.bottom > b.top - margin
+  );
+}
+
+function placeLocateToast() {
+  const root = container.value?.parentElement;
+  const el = locateToastEl.value;
+  if (!root || !el) return;
+  const mapRect = root.getBoundingClientRect();
+  const margin = 10;
+  const measure = (top: number, left: number) => {
+    el.style.top = `${top}px`;
+    el.style.left = `${left}px`;
+    el.style.transform = "translateX(-50%)";
+    return el.getBoundingClientRect();
+  };
+  let top = margin;
+  let left = mapRect.width / 2;
+  let rect = measure(top, left);
+
+  const legendRoot = root.querySelector("[data-map-legend]");
+  const legendTarget = legendRoot?.classList.contains("is-collapsed")
+    ? legendRoot.querySelector("[data-legend-handle]")
+    : legendRoot;
+  const legend =
+    legendTarget instanceof HTMLElement ? legendTarget.getBoundingClientRect() : undefined;
+  if (legend && legend.width > 0 && rectsOverlap(rect, legend, 8)) {
+    const below = legend.bottom - mapRect.top + margin;
+    if (below + rect.height <= mapRect.height - margin) {
+      top = below;
+      rect = measure(top, left);
+    }
+    if (rectsOverlap(rect, legend, 8)) {
+      const beside = legend.right - mapRect.left + margin + rect.width / 2;
+      if (beside + rect.width / 2 <= mapRect.width - margin) {
+        top = margin;
+        left = beside;
+        rect = measure(top, left);
+      }
+    }
+  }
+
+  const blocks = [
+    map.value?.getContainer().querySelector(".maplibregl-ctrl-bottom-left"),
+    map.value?.getContainer().querySelector(".maplibregl-ctrl-bottom-right"),
+  ];
+  for (const node of blocks) {
+    if (!(node instanceof HTMLElement)) continue;
+    const box = node.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0 || !rectsOverlap(rect, box, 8)) continue;
+    const shifted = box.top - mapRect.top - margin - rect.height;
+    if (shifted < margin) continue;
+    top = shifted;
+    rect = measure(top, left);
+  }
+
+  const half = rect.width / 2;
+  const minLeft = margin + half;
+  const maxLeft = Math.max(minLeft, mapRect.width - margin - half);
+  left = Math.min(Math.max(left, minLeft), maxLeft);
+  measure(top, left);
+  locateToastStyle.value = { top: `${top}px`, left: `${left}px`, transform: "translateX(-50%)" };
+  locateToastPlaced.value = true;
+}
+
+function showLocateToast(text: string) {
+  locateToastKey.value += 1;
+  locateToastPlaced.value = false;
+  locateToast.value = text;
+  locateToastStyle.value = { top: "10px", left: "50%", transform: "translateX(-50%)" };
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    toastTimer = 0;
+    locateToast.value = null;
+  }, LOCATE_TOAST_MS);
+  void nextTick(() => placeLocateToast());
+}
+
+function applyLocateHighlight() {
+  if (!locateKey) return;
+  const token = String(locateToken);
+  for (const pin of pins) {
+    const frame = pin.button.querySelector(".spot-thumb-frame");
+    if (pin.button.classList.contains("is-hidden")) {
+      pin.button.classList.remove("is-dim", "is-focus");
+      delete pin.button.dataset.focusToken;
+      frame?.classList.remove("is-pulse");
+      continue;
+    }
+    const members = membersOf.get(pin.spot.id) ?? [pin];
+    const focused = members.some((item) => item.group === locateKey);
+    pin.button.classList.toggle("is-dim", !focused);
+    pin.button.classList.toggle("is-focus", focused);
+    if (!focused || !(frame instanceof HTMLElement)) {
+      delete pin.button.dataset.focusToken;
+      frame?.classList.remove("is-pulse");
+      continue;
+    }
+    if (pin.button.dataset.focusToken === token) continue;
+    pin.button.dataset.focusToken = token;
+    frame.classList.remove("is-pulse");
+    void frame.offsetWidth;
+    frame.classList.add("is-pulse");
+  }
+}
+
+function cancelLocateHighlight() {
+  window.clearTimeout(locateTimer);
+  locateTimer = 0;
+  locateKey = null;
+  for (const pin of pins) {
+    pin.button.classList.remove("is-dim", "is-focus");
+    delete pin.button.dataset.focusToken;
+    pin.button.querySelector(".spot-thumb-frame")?.classList.remove("is-pulse");
+  }
+}
+
+/** flyTo/fitBounds 会同步触发 movestart，但这次 MapLibre 不带 originalEvent。只放行这一下。 */
+let suppressLocateCancel = false;
+
+function moveCamera(run: () => void) {
+  suppressLocateCancel = true;
+  try {
+    run();
+  } finally {
+    suppressLocateCancel = false;
+  }
+}
+
+function onUserCamera() {
+  if (suppressLocateCancel || !locateKey) return;
+  cancelLocateHighlight();
+}
+
+function startLocateHighlight(group: AnimeGroup) {
+  locateToken += 1;
+  locateKey = group.key;
+  window.clearTimeout(locateTimer);
+  for (const pin of pins) {
+    delete pin.button.dataset.focusToken;
+    pin.button.querySelector(".spot-thumb-frame")?.classList.remove("is-pulse");
+  }
+  locateTimer = window.setTimeout(() => cancelLocateHighlight(), LOCATE_HIGHLIGHT_MS);
+  showLocateToast(`「${group.animeName} · ${group.spots.length} 个地点」`);
+  scheduleLayout();
+}
+
+/** 与页面初次加载相同：先按视口套上日本全图的最小缩放，再拟合全部地点。 */
+function fitInitialView(m: MlMap, duration: number) {
+  syncMapOverview(m);
+  const bounds = new LngLatBounds();
+  for (const group of groups) {
+    for (const spot of group.spots) bounds.extend([spot.lng, spot.lat]);
+  }
+  if (bounds.isEmpty()) return;
+  moveCamera(() => {
+    m.fitBounds(bounds, { padding: 64, maxZoom: 14, duration });
+  });
+}
+
+function resetView() {
+  const m = map.value;
+  if (!m) return;
+  cancelLocateHighlight();
+  dismissToast();
+  fitInitialView(m, 400);
 }
 
 /** 只有一个地点时飞到这一级，多地点的包围盒也不会放得比这更近。 */
@@ -544,22 +861,26 @@ function focusGroup(key: string) {
     const next = new Set(hidden.value);
     next.delete(key);
     hidden.value = next;
-    scheduleLayout();
   }
   closePopup();
+  startLocateHighlight(group);
   if (group.spots.length === 1) {
     const spot = group.spots[0]!;
-    m.flyTo({ center: [spot.lng, spot.lat], zoom: FOCUS_ZOOM, duration: 400 });
+    moveCamera(() => {
+      m.flyTo({ center: [spot.lng, spot.lat], zoom: FOCUS_ZOOM, duration: 400 });
+    });
     return;
   }
   const bounds = new LngLatBounds();
   for (const spot of group.spots) bounds.extend([spot.lng, spot.lat]);
   const view = Math.min(m.getContainer().clientWidth, m.getContainer().clientHeight);
   const padding = Math.max(48, Math.min(80, Math.round(view * 0.12)));
-  m.fitBounds(bounds, {
-    padding: { top: padding + 40, right: padding, bottom: padding, left: padding + 24 },
-    maxZoom: FOCUS_ZOOM,
-    duration: 400,
+  moveCamera(() => {
+    m.fitBounds(bounds, {
+      padding: { top: padding + 40, right: padding, bottom: padding, left: padding + 24 },
+      maxZoom: FOCUS_ZOOM,
+      duration: 400,
+    });
   });
 }
 
@@ -567,6 +888,9 @@ onMounted(() => {
   legendMedia = window.matchMedia(LEGEND_NARROW_QUERY);
   onLegendMedia();
   legendMedia.addEventListener("change", onLegendMedia);
+  window.addEventListener("pointerdown", onDocPointerDown, true);
+  window.addEventListener("keydown", onDocKeydown);
+  window.addEventListener("scroll", onAnyScroll, true);
   ensureMapWorker();
   const m = new MlMap({
     container: container.value!,
@@ -595,15 +919,19 @@ onMounted(() => {
       if (inner instanceof HTMLElement) inner.style.width = width;
       schedulePan(m, popup);
     }
+    if (locateToast.value) placeLocateToast();
     scheduleLayout();
   });
+  m.on("movestart", onUserCamera);
+  m.on("dragstart", onUserCamera);
+  m.on("zoomstart", onUserCamera);
+  m.on("rotatestart", onUserCamera);
   m.on("error", (e) => {
     const msg = (e.error as Error | undefined)?.message ?? String(e.error);
     console.error("[map]", msg);
     error.value = `地图加载出错：${msg}`;
   });
 
-  const bounds = new LngLatBounds();
   for (const g of groups) {
     for (const s of g.spots) {
       const { button, badge } = createThumb(s);
@@ -630,10 +958,9 @@ onMounted(() => {
       );
       button.addEventListener("pointerenter", warm);
       pins.push(pin);
-      bounds.extend([s.lng, s.lat]);
     }
   }
-  if (!bounds.isEmpty()) m.fitBounds(bounds, { padding: 64, maxZoom: 14, duration: 0 });
+  fitInitialView(m, 0);
   m.on("load", scheduleLayout);
   m.on("move", scheduleLayout);
   m.on("moveend", scheduleLayout);
@@ -648,6 +975,12 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   legendMedia?.removeEventListener("change", onLegendMedia);
+  window.removeEventListener("pointerdown", onDocPointerDown, true);
+  window.removeEventListener("keydown", onDocKeydown);
+  window.removeEventListener("scroll", onAnyScroll, true);
+  window.clearTimeout(eyePressTimer);
+  window.clearTimeout(locateTimer);
+  window.clearTimeout(toastTimer);
   closePopup();
   map.value?.remove();
 });
@@ -674,7 +1007,36 @@ onBeforeUnmount(() => {
         class="min-w-0 max-w-[70vw] rounded bg-white text-xs leading-5 text-[#333] shadow-[0_0_0_2px_rgba(0,0,0,0.1)]"
         :inert="narrow && legendCollapsed"
       >
-        <h1 class="m-0 px-2.5 pt-1.5 font-semibold">巡礼地图</h1>
+        <div class="flex items-center pt-1 pr-1.5">
+          <h1 class="m-0 min-w-0 flex-1 truncate pl-2.5 font-semibold">巡礼地图</h1>
+          <div class="ml-2 flex shrink-0">
+            <button
+              type="button"
+              class="grid h-[29px] w-[29px] shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-black/45 hover:bg-black/5 hover:text-[#333]"
+              aria-label="回到默认视图"
+              title="回到默认视图"
+              @click="resetView"
+            >
+              <span class="i-lucide-locate-fixed h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              class="-ml-1.5 grid h-[29px] w-[29px] shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-black/45 hover:bg-black/5 hover:text-[#333]"
+              :aria-label="allEyeLabel"
+              :title="allEyeLabel"
+              :aria-pressed="allShown ? 'true' : noneShown ? 'false' : 'mixed'"
+              @click="toggleAllGroups"
+            >
+              <span
+                class="h-4 w-4"
+                :class="
+                  allShown ? 'i-lucide-eye' : noneShown ? 'i-lucide-eye-off' : 'i-lucide-eye-dashed'
+                "
+                aria-hidden="true"
+              />
+            </button>
+          </div>
+        </div>
         <ul class="m-0 list-none p-1">
           <li
             v-for="g in groups"
@@ -697,11 +1059,16 @@ onBeforeUnmount(() => {
               </button>
               <button
                 type="button"
-                class="-ml-1.5 grid h-[29px] w-[29px] shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-black/45 hover:bg-black/5 hover:text-[#333]"
+                class="legend-eye -ml-1.5 grid h-[29px] w-[29px] shrink-0 place-items-center rounded border-0 bg-transparent p-0 text-black/45 hover:bg-black/5 hover:text-[#333]"
                 :aria-label="hidden.has(g.key) ? `显示${g.animeName}` : `隐藏${g.animeName}`"
                 :title="hidden.has(g.key) ? `显示${g.animeName}` : `隐藏${g.animeName}`"
                 :aria-pressed="hidden.has(g.key) ? 'false' : 'true'"
-                @click="toggleGroup(g.key)"
+                @click="onEyeClick(g.key)"
+                @contextmenu="onEyeContextMenu($event, g.key)"
+                @pointerdown="onEyePointerDown($event, g.key)"
+                @pointermove="onEyePointerMove"
+                @pointerup="onEyePointerEnd"
+                @pointercancel="onEyePointerEnd"
               >
                 <span
                   class="h-4 w-4"
@@ -736,6 +1103,37 @@ onBeforeUnmount(() => {
       </button>
     </aside>
 
+    <p
+      v-if="locateToast"
+      :key="locateToastKey"
+      ref="locateToastEl"
+      role="status"
+      class="locate-toast pointer-events-none absolute z-20 w-max max-w-[calc(100%-20px)] whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs leading-5 text-[#333] shadow-[0_0_0_2px_rgba(0,0,0,0.1)]"
+      :style="{ ...locateToastStyle, visibility: locateToastPlaced ? 'visible' : 'hidden' }"
+    >
+      {{ locateToast }}
+    </p>
+
+    <div
+      v-if="eyeMenu"
+      ref="eyeMenuEl"
+      role="menu"
+      aria-label="图例操作"
+      class="absolute z-30 overflow-hidden rounded bg-white text-xs leading-5 text-[#333] shadow-[0_0_0_2px_rgba(0,0,0,0.1)]"
+      :style="{ left: `${eyeMenu.x}px`, top: `${eyeMenu.y}px` }"
+      @contextmenu.prevent
+    >
+      <button
+        ref="eyeMenuItem"
+        type="button"
+        role="menuitem"
+        class="block w-full whitespace-nowrap border-0 bg-transparent px-2.5 py-1 text-left text-xs leading-5 text-[#333] hover:bg-black/5"
+        @click="showOnlyGroup(eyeMenu.key)"
+      >
+        仅显示此项
+      </button>
+    </div>
+
     <div
       v-if="error"
       role="alert"
@@ -767,8 +1165,14 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .legend-ear {
+  .legend-ear,
+  button.spot-thumb {
     transition: none;
+  }
+
+  .spot-thumb-frame.is-pulse,
+  .locate-toast {
+    animation: none;
   }
 }
 
@@ -866,6 +1270,36 @@ button.spot-thumb {
   cursor: pointer;
   font: inherit;
   line-height: 0;
+  transition: opacity 180ms ease;
+}
+
+button.spot-thumb.is-dim {
+  opacity: 0.3;
+}
+
+button.legend-eye {
+  -webkit-touch-callout: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.locate-toast {
+  animation: locate-toast 2s ease forwards;
+}
+
+@keyframes locate-toast {
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 button.spot-thumb.is-hidden {
@@ -890,6 +1324,22 @@ button.spot-thumb:focus-visible {
   overflow: hidden;
   border-radius: 2px;
   background: #e6e6e6;
+}
+
+.spot-thumb-frame.is-pulse {
+  animation: spot-focus-pulse 680ms ease-out 1;
+}
+
+@keyframes spot-focus-pulse {
+  0% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-5px);
+  }
+  100% {
+    transform: translateY(0);
+  }
 }
 
 .spot-thumb-img {
@@ -947,5 +1397,16 @@ button.spot-thumb:focus-visible {
 
 .spot-thumb-count[hidden] {
   display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.spot-thumb {
+    transition: none;
+  }
+
+  .spot-thumb-frame.is-pulse,
+  .locate-toast {
+    animation: none;
+  }
 }
 </style>
