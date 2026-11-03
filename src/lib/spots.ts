@@ -43,6 +43,10 @@ const WORK_BY_BANGUMI: Record<number, { key: string; name: string }> = {
   3375: { key: "haruhi", name: "凉宫春日系列" },
   394260: { key: "bokuyaba", name: "我心里危险的东西" },
   441795: { key: "bokuyaba", name: "我心里危险的东西" },
+  115908: { key: "euphonium", name: "吹响吧！上低音号系列" },
+  152091: { key: "euphonium", name: "吹响吧！上低音号系列" },
+  283643: { key: "euphonium", name: "吹响吧！上低音号系列" },
+  216372: { key: "euphonium", name: "吹响吧！上低音号系列" },
 };
 
 function workOf(spot: Spot): { key: string; name: string } {
