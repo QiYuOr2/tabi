@@ -51,9 +51,10 @@ node scripts/match-anitabi.ts 上低音号 京都音乐厅 --top 3 --json
 pnpm photos:process -- ./photos --bangumi 100444 DSC001.jpg=51i51ynk8
 pnpm photos:process -- --spots photos/imported-spots.json --bangumi 100444
 pnpm photos:process -- --map photos/map.json
+pnpm photos:process -- --map photos/map.json --format webp
 ```
 
-`process-photos` 会先读原图的 GPS 和 `DateTimeOriginal`（和 `import-photos` 同一套逻辑），再按 EXIF 方向转正。大图最长边 1280、JPEG 质量 82；缩略图从大图再缩到最长边 320、质量 78。都不放大，渐进式，mozjpeg，sRGB，去掉全部元数据。写完会再检查输出里没有 EXIF/GPS。
+`process-photos` 会先读原图的 GPS 和 `DateTimeOriginal`（和 `import-photos` 同一套逻辑），再按 EXIF 方向转正。大图最长边 1280、JPEG 质量 82；缩略图从大图再缩到最长边 320、质量 78。都不放大，渐进式，mozjpeg，sRGB，去掉全部元数据。写完会再检查输出里没有 EXIF/GPS。加 `--format webp` 时改出 WebP（大图质量 80，缩略图质量 75），文件名和 jsDelivr 地址的扩展名变成 `.webp`；不加时仍是 JPEG。
 
 输出名优先用命令行的 `原文件名=输出名` 和 `--map`，否则用 `--spots` 里的 `anitabiPointId`，没有就用 spot id。未写 `--spots` 时，如果 `photos/imported-spots.json` 存在会自动读。`--map` 的格式是 `{ "bangumiId": 100444, "files": { "DSC001.jpg": "51i51ynk8" } }`。
 
