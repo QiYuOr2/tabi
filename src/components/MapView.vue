@@ -531,8 +531,16 @@ function createThumb(spot: Spot) {
   const badge = document.createElement("span");
   badge.className = "spot-thumb-count";
   badge.hidden = true;
-  button.append(frame, badge);
+  // MapLibre 把定位写在按钮的 transform 上。整颗图钉的缩放放在内层，原点在底边中点，地点不会漂。
+  const body = document.createElement("span");
+  body.className = "spot-thumb-pin";
+  body.append(frame, badge);
+  button.append(body);
   return { button, badge };
+}
+
+function pinBody(pin: Pin) {
+  return pin.button.querySelector(".spot-thumb-pin");
 }
 
 function applyHidden(next: Set<string>) {
@@ -764,27 +772,27 @@ function applyLocateHighlight() {
   if (!locateKey) return;
   const token = String(locateToken);
   for (const pin of pins) {
-    const frame = pin.button.querySelector(".spot-thumb-frame");
+    const body = pinBody(pin);
     if (pin.button.classList.contains("is-hidden")) {
       pin.button.classList.remove("is-dim", "is-focus");
       delete pin.button.dataset.focusToken;
-      frame?.classList.remove("is-pulse");
+      body?.classList.remove("is-pulse");
       continue;
     }
     const members = membersOf.get(pin.spot.id) ?? [pin];
     const focused = members.some((item) => item.group === locateKey);
     pin.button.classList.toggle("is-dim", !focused);
     pin.button.classList.toggle("is-focus", focused);
-    if (!focused || !(frame instanceof HTMLElement)) {
+    if (!focused || !(body instanceof HTMLElement)) {
       delete pin.button.dataset.focusToken;
-      frame?.classList.remove("is-pulse");
+      body?.classList.remove("is-pulse");
       continue;
     }
     if (pin.button.dataset.focusToken === token) continue;
     pin.button.dataset.focusToken = token;
-    frame.classList.remove("is-pulse");
-    void frame.offsetWidth;
-    frame.classList.add("is-pulse");
+    body.classList.remove("is-pulse");
+    void body.offsetWidth;
+    body.classList.add("is-pulse");
   }
 }
 
@@ -795,7 +803,7 @@ function cancelLocateHighlight() {
   for (const pin of pins) {
     pin.button.classList.remove("is-dim", "is-focus");
     delete pin.button.dataset.focusToken;
-    pin.button.querySelector(".spot-thumb-frame")?.classList.remove("is-pulse");
+    pinBody(pin)?.classList.remove("is-pulse");
   }
 }
 
@@ -822,7 +830,7 @@ function startLocateHighlight(group: AnimeGroup) {
   window.clearTimeout(locateTimer);
   for (const pin of pins) {
     delete pin.button.dataset.focusToken;
-    pin.button.querySelector(".spot-thumb-frame")?.classList.remove("is-pulse");
+    pinBody(pin)?.classList.remove("is-pulse");
   }
   locateTimer = window.setTimeout(() => cancelLocateHighlight(), LOCATE_HIGHLIGHT_MS);
   showLocateToast(`「${group.animeName} · ${group.spots.length} 个地点」`);
@@ -1170,7 +1178,7 @@ onBeforeUnmount(() => {
     transition: none;
   }
 
-  .spot-thumb-frame.is-pulse,
+  .spot-thumb-pin.is-pulse,
   .locate-toast {
     animation: none;
   }
@@ -1262,19 +1270,51 @@ button.spot-thumb {
   width: 72px;
   height: 54px;
   margin: 0;
-  padding: 2px;
+  padding: 0;
   border: 0;
-  border-radius: 4px;
-  background: #fff;
-  box-shadow: 0 0 0 2px rgb(0 0 0 / 10%);
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
   cursor: pointer;
   font: inherit;
   line-height: 0;
   transition: opacity 180ms ease;
 }
 
+button.spot-thumb.is-focus {
+  z-index: 4;
+}
+
 button.spot-thumb.is-dim {
   opacity: 0.3;
+}
+
+.spot-thumb-pin {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  display: block;
+  padding: 2px;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 10%);
+  transform-origin: 50% 100%;
+}
+
+.spot-thumb-pin.is-pulse {
+  animation: spot-focus-scale 0.9s ease-out 2;
+}
+
+@keyframes spot-focus-scale {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 button.legend-eye {
@@ -1306,8 +1346,8 @@ button.spot-thumb.is-hidden {
   display: none;
 }
 
-button.spot-thumb:hover,
-button.spot-thumb:focus-visible {
+button.spot-thumb:hover .spot-thumb-pin,
+button.spot-thumb:focus-visible .spot-thumb-pin {
   box-shadow: 0 0 0 2px rgb(0 0 0 / 28%);
 }
 
@@ -1324,22 +1364,6 @@ button.spot-thumb:focus-visible {
   overflow: hidden;
   border-radius: 2px;
   background: #e6e6e6;
-}
-
-.spot-thumb-frame.is-pulse {
-  animation: spot-focus-pulse 680ms ease-out 1;
-}
-
-@keyframes spot-focus-pulse {
-  0% {
-    transform: translateY(0);
-  }
-  40% {
-    transform: translateY(-5px);
-  }
-  100% {
-    transform: translateY(0);
-  }
 }
 
 .spot-thumb-img {
@@ -1404,7 +1428,7 @@ button.spot-thumb:focus-visible {
     transition: none;
   }
 
-  .spot-thumb-frame.is-pulse,
+  .spot-thumb-pin.is-pulse,
   .locate-toast {
     animation: none;
   }
