@@ -59,6 +59,43 @@ export function workName(spot: Spot): string {
   return workOf(spot).name;
 }
 
+const BANGUMI_ID = /^[1-9]\d*$/;
+
+/** 这一组对应的 bangumi 条目。合并系列含 WORK_BY_BANGUMI 里的每一季。 */
+function bangumiIdsFor(group: AnimeGroup): number[] {
+  const ids = new Set<number>();
+  for (const spot of group.spots) {
+    if (spot.bangumiId != null) ids.add(spot.bangumiId);
+  }
+  for (const [id, work] of Object.entries(WORK_BY_BANGUMI)) {
+    if (work.key === group.key) ids.add(Number(id));
+  }
+  return [...ids];
+}
+
+/** 写进 ?work= 的条目 id。合并系列用最早一季（最小 bangumi id）。 */
+export function canonicalWorkId(group: AnimeGroup): string | null {
+  const ids = bangumiIdsFor(group);
+  if (ids.length === 0) return null;
+  return String(Math.min(...ids));
+}
+
+/**
+ * 用 bangumi 条目 id 找到图例上的那一组。
+ * 合并系列的任一季都落到整组。对不上时返回 null。
+ */
+export function groupByWorkId(list: AnimeGroup[], workId: string): AnimeGroup | null {
+  if (!BANGUMI_ID.test(workId)) return null;
+  const id = Number(workId);
+  const merged = WORK_BY_BANGUMI[id];
+  if (merged) return list.find((group) => group.key === merged.key) ?? null;
+  return (
+    list.find(
+      (group) => group.key === workId || group.spots.some((spot) => spot.bangumiId === id),
+    ) ?? null
+  );
+}
+
 /** 按作品分组，每个作品一个固定颜色 */
 export function groupByAnime(list: Spot[]): AnimeGroup[] {
   const map = new Map<string, AnimeGroup>();

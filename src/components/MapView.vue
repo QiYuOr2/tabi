@@ -18,6 +18,7 @@ import {
   THUMB_W,
   type ScreenPoint,
 } from "../lib/cluster";
+import { readMapLink, replaceMapLink } from "../lib/deep-link";
 import { imagePlan, photoMedium, prefetchImage } from "../lib/images";
 import {
   MAP_STYLE_URL,
@@ -28,7 +29,7 @@ import {
   syncMapOverview,
 } from "../lib/map";
 import { PhotoCreditControl } from "../lib/photo-credit-control";
-import { groupByAnime, spots, type AnimeGroup } from "../lib/spots";
+import { canonicalWorkId, groupByAnime, groupByWorkId, spots, type AnimeGroup } from "../lib/spots";
 import type { Spot } from "../types/spot";
 import SpotCard from "./SpotCard.vue";
 
@@ -77,13 +78,31 @@ let popup: Popup | null = null;
 let popupApp: App | null = null;
 let selectedId: string | null = null;
 let layoutQueued = false;
+/** 打开 ?spot= 的飞行还没结束时递增，用来丢掉过期的打开。 */
+let spotReveal = 0;
+/** 还没打开浮窗的 ?spot=。用户把地图拖走时清掉地址栏。 */
+let pendingSpot: string | null = null;
 
-function closePopup() {
+function setLink(next: { work: string | null; spot: string | null }) {
+  replaceMapLink(next);
+}
+
+function cancelSpotReveal() {
+  spotReveal += 1;
+  if (!pendingSpot) return;
+  pendingSpot = null;
+  setLink({ work: null, spot: null });
+}
+
+function closePopup(opts?: { preserveLink?: boolean }) {
   selectedId = null;
-  popupApp?.unmount();
+  const app = popupApp;
+  const current = popup;
   popupApp = null;
-  popup?.remove();
   popup = null;
+  app?.unmount();
+  current?.remove();
+  if (!opts?.preserveLink) setLink({ work: null, spot: null });
 }
 
 function popupMaxWidth(m: MlMap) {
@@ -393,8 +412,21 @@ function settleFans(
   }
 }
 
+/** 浮窗锚在正在显示的那枚图钉上。同一场景里点到的那张若被收进角标，仍用代表图钉的偏移。 */
+function popupAnchor(spot: Spot) {
+  const pin = pins.find((item) => item.spot.id === spot.id);
+  if (!pin || !pin.button.classList.contains("is-hidden")) {
+    return { lng: spot.lng, lat: spot.lat, offset: pin?.offset ?? { x: 0, y: 0 } };
+  }
+  const shown = (membersOf.get(pin.spot.id) ?? []).find(
+    (item) => !item.button.classList.contains("is-hidden"),
+  );
+  if (!shown) return { lng: spot.lng, lat: spot.lat, offset: pin.offset };
+  return { lng: shown.spot.lng, lat: shown.spot.lat, offset: shown.offset };
+}
+
 function openPopup(m: MlMap, spot: Spot) {
-  closePopup();
+  closePopup({ preserveLink: true });
   const pages = scenePages(spot);
   const start = Math.max(
     0,
@@ -410,20 +442,21 @@ function openPopup(m: MlMap, spot: Spot) {
     start,
     colors: pages.map((page) => colorOf(page)),
     onClose: () => closePopup(),
+    onSelect: (page: Spot) => setLink({ work: null, spot: page.id }),
   });
   popupApp.mount(host);
 
-  const shift = pins.find((pin) => pin.spot.id === spot.id)?.offset ?? { x: 0, y: 0 };
+  const anchor = popupAnchor(spot);
   const next = new Popup({
     closeButton: false,
     closeOnClick: false,
     anchor: "bottom",
-    offset: [shift.x, shift.y - (THUMB_H + 8)],
+    offset: [anchor.offset.x, anchor.offset.y - (THUMB_H + 8)],
     maxWidth: popupMaxWidth(m),
     className: "spot-popup",
     focusAfterOpen: false,
   })
-    .setLngLat([spot.lng, spot.lat])
+    .setLngLat([anchor.lng, anchor.lat])
     .setDOMContent(host)
     .addTo(m);
   popup = next;
@@ -433,7 +466,9 @@ function openPopup(m: MlMap, spot: Spot) {
     popupApp = null;
     popup = null;
     selectedId = null;
+    setLink({ work: null, spot: null });
   });
+  setLink({ work: null, spot: spot.id });
   schedulePan(m, next);
 }
 
@@ -601,6 +636,7 @@ function scheduleLayout() {
 }
 
 function onThumbClick(m: MlMap, pin: Pin) {
+  cancelSpotReveal();
   cancelLocateHighlight();
   const members = membersOf.get(pin.spot.id) ?? [pin];
   const scenes = sceneGroups(members);
@@ -704,6 +740,7 @@ function pinBody(pin: Pin) {
 }
 
 function applyHidden(next: Set<string>) {
+  cancelSpotReveal();
   hidden.value = next;
   const selected = pins.find((item) => item.spot.id === selectedId);
   if (selected && next.has(selected.group)) closePopup();
@@ -980,6 +1017,8 @@ function moveCamera(run: () => void) {
 }
 
 function onUserCamera() {
+  // flyTo/fitBounds 的 movestart 是同步的，而且落在 moveCamera 里。那一下不算用户把链接拖丢。
+  if (!suppressLocateCancel) cancelSpotReveal();
   if (suppressLocateCancel || !locateKey) return;
   cancelLocateHighlight();
 }
@@ -1013,8 +1052,10 @@ function fitInitialView(m: MlMap, duration: number) {
 function resetView() {
   const m = map.value;
   if (!m) return;
+  cancelSpotReveal();
   cancelLocateHighlight();
   dismissToast();
+  closePopup();
   fitInitialView(m, 400);
 }
 
@@ -1025,13 +1066,15 @@ function focusGroup(key: string) {
   const m = map.value;
   const group = groups.find((item) => item.key === key);
   if (!m || !group || group.spots.length === 0) return;
+  cancelSpotReveal();
   if (hidden.value.has(key)) {
     const next = new Set(hidden.value);
     next.delete(key);
     hidden.value = next;
   }
-  closePopup();
+  closePopup({ preserveLink: true });
   startLocateHighlight(group);
+  setLink({ work: canonicalWorkId(group), spot: null });
   if (group.spots.length === 1) {
     const spot = group.spots[0]!;
     moveCamera(() => {
@@ -1050,6 +1093,57 @@ function focusGroup(key: string) {
       duration: 400,
     });
   });
+}
+
+/** 飞到这一级后，不同场景会散开成单独的图钉，不再停在聚合里。 */
+function revealSpot(m: MlMap, spot: Spot) {
+  const token = ++spotReveal;
+  pendingSpot = spot.id;
+  const group = groups.find((item) => item.spots.some((page) => page.id === spot.id));
+  if (group && hidden.value.has(group.key)) {
+    const next = new Set(hidden.value);
+    next.delete(group.key);
+    hidden.value = next;
+  }
+  cancelLocateHighlight();
+  dismissToast();
+  moveCamera(() => {
+    m.flyTo({ center: [spot.lng, spot.lat], zoom: CLUSTER_MAX_ZOOM, duration: 400 });
+  });
+  const open = () => {
+    if (token !== spotReveal) return;
+    if (!m.loaded()) {
+      m.once("load", open);
+      return;
+    }
+    if (m.isMoving()) {
+      m.once("moveend", open);
+      return;
+    }
+    layoutPins();
+    if (token !== spotReveal) return;
+    pendingSpot = null;
+    openPopup(m, spot);
+  };
+  open();
+}
+
+/** 打开页面时应用 ?spot= / ?work=。无效参数静默丢掉，回到默认视图。spot 优先。 */
+function applyInitialLink(m: MlMap) {
+  const raw = new URLSearchParams(window.location.search);
+  const link = readMapLink(window.location.search);
+  const spot = link.spot ? spots.find((item) => item.id === link.spot) : undefined;
+  if (spot) {
+    revealSpot(m, spot);
+    return;
+  }
+  const group = link.work ? groupByWorkId(groups, link.work) : null;
+  if (group) {
+    focusGroup(group.key);
+    return;
+  }
+  if (raw.has("work") || raw.has("spot")) setLink({ work: null, spot: null });
+  fitInitialView(m, 0);
 }
 
 onMounted(() => {
@@ -1136,7 +1230,7 @@ onMounted(() => {
       pins.push(pin);
     }
   }
-  fitInitialView(m, 0);
+  applyInitialLink(m);
   m.on("load", scheduleLayout);
   m.on("move", scheduleLayout);
   m.on("moveend", scheduleLayout);
@@ -1145,6 +1239,7 @@ onMounted(() => {
   m.on("click", (e) => {
     const target = e.originalEvent.target as HTMLElement | null;
     if (target?.closest(".maplibregl-marker") || target?.closest(".maplibregl-popup")) return;
+    cancelSpotReveal();
     closePopup();
   });
 });
@@ -1157,7 +1252,7 @@ onBeforeUnmount(() => {
   window.clearTimeout(eyePressTimer);
   window.clearTimeout(locateTimer);
   window.clearTimeout(toastTimer);
-  closePopup();
+  closePopup({ preserveLink: true });
   map.value?.remove();
 });
 </script>

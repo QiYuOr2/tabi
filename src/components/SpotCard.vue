@@ -9,6 +9,8 @@ const props = defineProps<{
   start: number;
   colors: string[];
   onClose: () => void;
+  /** 翻到另一张实拍时通知外部。初次渲染不调用。 */
+  onSelect?: (spot: Spot) => void;
 }>();
 
 const index = ref(Math.min(Math.max(props.start, 0), Math.max(props.spots.length - 1, 0)));
@@ -70,6 +72,8 @@ function show(i: number) {
   lightboxFailed.value = false;
   index.value = i;
   warm(i);
+  const page = props.spots[i];
+  if (page) props.onSelect?.(page);
 }
 
 function openLightbox() {
