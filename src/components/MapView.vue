@@ -18,7 +18,7 @@ import {
   THUMB_W,
   type ScreenPoint,
 } from "../lib/cluster";
-import { imagePlan, prefetchImage } from "../lib/images";
+import { imagePlan, photoMedium, prefetchImage } from "../lib/images";
 import {
   MAP_STYLE_URL,
   coverOutsideJapan,
@@ -67,6 +67,8 @@ interface Pin {
   marker: Marker;
   /** 相对真实坐标的屏幕偏移。散开时非 0，地理坐标不变。 */
   offset: { x: number; y: number };
+  /** 缩略图进入画面后才赋值 src。 */
+  loadThumb: () => void;
 }
 
 const pins: Pin[] = [];
@@ -75,8 +77,6 @@ let popup: Popup | null = null;
 let popupApp: App | null = null;
 let selectedId: string | null = null;
 let layoutQueued = false;
-
-for (const s of spots) prefetchImage(s.photoThumb ?? null);
 
 function closePopup() {
   selectedId = null;
@@ -401,7 +401,7 @@ function openPopup(m: MlMap, spot: Spot) {
     pages.findIndex((page) => page.id === spot.id),
   );
   selectedId = spot.id;
-  for (const page of pages) warmPopup(page);
+  warmPopup(pages, start);
   const host = document.createElement("div");
   // 先定宽，避免图片固有尺寸把弹层撑开后，平移按旧宽度算偏。
   host.style.width = popupMaxWidth(m);
@@ -454,8 +454,10 @@ function spreadOf(list: Pin[]) {
 function setShown(pin: Pin, shown: boolean) {
   pin.button.classList.toggle("is-hidden", !shown);
   pin.button.tabIndex = shown ? 0 : -1;
-  if (shown) pin.button.removeAttribute("aria-hidden");
-  else pin.button.setAttribute("aria-hidden", "true");
+  if (shown) {
+    pin.button.removeAttribute("aria-hidden");
+    pin.loadThumb();
+  } else pin.button.setAttribute("aria-hidden", "true");
 }
 
 function layoutPins() {
@@ -528,10 +530,6 @@ function layoutPins() {
         rep.button.title = label;
         rep.button.setAttribute("aria-label", label);
       }
-      const img = rep.button.querySelector("img");
-      if (!img || img.classList.contains("is-ready")) {
-        for (const page of scenePages(rep.spot)) warmPopup(page);
-      }
       continue;
     }
 
@@ -583,10 +581,6 @@ function layoutPins() {
         rep.button.title = label;
         rep.button.setAttribute("aria-label", label);
       }
-      const img = rep.button.querySelector("img");
-      if (!img || img.classList.contains("is-ready")) {
-        for (const page of scene) warmPopup(page.spot);
-      }
     });
     for (const pin of items) setShown(pin, shown.has(pin));
     fans.push({ reps, cx, cy });
@@ -629,10 +623,14 @@ function onThumbClick(m: MlMap, pin: Pin) {
   m.fitBounds(bounds, { padding, maxZoom: CLUSTER_MAX_ZOOM, duration: 400 });
 }
 
-/** 缩略图已经在画面上时，把弹层要用的动画截图和实拍原图先拉下来。 */
-function warmPopup(spot: Spot) {
-  prefetchImage(imagePlan(spot.animeImage, "h360"));
-  if (spot.photo) prefetchImage(spot.photo);
+/** 预取当前页和前后各一页：动画截图 h360，实拍用 640 中图。不拉 1280 原图。 */
+function warmPopup(pages: Spot[], index: number) {
+  for (let i = index - 1; i <= index + 1; i++) {
+    const page = pages[i];
+    if (!page) continue;
+    prefetchImage(imagePlan(page.animeImage, "h360"));
+    prefetchImage(photoMedium(page.photo));
+  }
 }
 
 function createThumb(spot: Spot) {
@@ -654,6 +652,7 @@ function createThumb(spot: Spot) {
   const primary = spot.photoThumb || null;
   const fallback = spot.photo;
   const src = primary || fallback;
+  let loadThumb = () => {};
   if (src) {
     const img = document.createElement("img");
     img.className = "spot-thumb-img";
@@ -666,24 +665,23 @@ function createThumb(spot: Spot) {
       img.classList.add("is-ready");
       skel.remove();
     };
-    const reveal = () => {
-      ready();
-      if (!button.classList.contains("is-hidden")) warmPopup(spot);
-    };
-    img.addEventListener("load", reveal);
+    img.addEventListener("load", ready);
     img.addEventListener("error", () => {
       if (!usingFallback && fallback && fallback !== primary) {
         usingFallback = true;
         img.src = fallback;
-        if (img.complete && img.naturalWidth > 0) reveal();
+        if (img.complete && img.naturalWidth > 0) ready();
         return;
       }
       skel.classList.add("is-error");
       skel.textContent = "无";
     });
     frame.append(img, skel);
-    img.src = src;
-    if (img.complete && img.naturalWidth > 0) reveal();
+    loadThumb = () => {
+      if (img.getAttribute("src")) return;
+      img.src = src;
+      if (img.complete && img.naturalWidth > 0) ready();
+    };
   } else {
     skel.classList.add("is-error");
     skel.textContent = "无";
@@ -698,7 +696,7 @@ function createThumb(spot: Spot) {
   body.className = "spot-thumb-pin";
   body.append(frame, badge);
   button.append(body);
-  return { button, badge };
+  return { button, badge, loadThumb };
 }
 
 function pinBody(pin: Pin) {
@@ -1104,16 +1102,24 @@ onMounted(() => {
 
   for (const g of groups) {
     for (const s of g.spots) {
-      const { button, badge } = createThumb(s);
+      const { button, badge, loadThumb } = createThumb(s);
       const marker = new Marker({ element: button, anchor: "bottom" })
         .setLngLat([s.lng, s.lat])
         .addTo(m);
-      const pin: Pin = { group: g.key, spot: s, button, badge, marker, offset: { x: 0, y: 0 } };
+      const pin: Pin = {
+        group: g.key,
+        spot: s,
+        button,
+        badge,
+        marker,
+        offset: { x: 0, y: 0 },
+        loadThumb,
+      };
       button.addEventListener("click", (ev) => {
         ev.stopPropagation();
         onThumbClick(m, pin);
       });
-      const warm = () => warmPopup(pin.spot);
+      const warm = () => warmPopup([pin.spot], 0);
       // 地图在画布容器上听触摸。不拦住的话，点缩略图会被当成拖地图，手机上就打不开弹层。
       const keep = (ev: Event) => ev.stopPropagation();
       button.addEventListener("pointerdown", keep);
