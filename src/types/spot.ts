@@ -29,7 +29,10 @@ export interface Spot {
   source: SpotSource;
   /** 对应的 anitabi 地标 ID，可为空 */
   anitabiPointId: string | null;
-  /** 截图来源署名（anitabi 要求标注 origin 并可跳转 originURL），可选 */
+  /**
+   * 截图来源署名（anitabi 要求标注 origin 并可跳转 originURL），可选。
+   * anitabi 没有对应截图时用 trace.moe 找帧：origin 填 "trace.moe"，截图放图床 tabi/<bangumiId>/anime/。
+   */
   origin?: string | null;
   originURL?: string | null;
 }
