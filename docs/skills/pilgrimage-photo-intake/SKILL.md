@@ -16,12 +16,12 @@ description: >-
 - **匹配以用户的对比图为准**：作品目录下有 `对比图/` 时，先用对比图把每张实拍和动画画面配对，再找 anitabi 地点。
 - **取景以对比图里的实拍半张为准**：旋转、裁剪（包括放大裁切、宽幅）都照对比图做。
 - **隐私**：公开图片去掉全部 EXIF/GPS；实拍 GPS 只留在工作目录，不写进任何公开文件、PR 或提交说明，用完删掉带 GPS 的原图副本。不写任何领土/政治相关措辞。
-- **提交方式**：图床照片直接提交 `master`。地图仓库只改数据（`spots.json`、文档）时直接提交 `main`，不开 PR；涉及代码（图例合并表、脚本、UI）才开 PR，每个新 PR 用一个新的、标题写清任务的云端代理，等用户说合并再合并。不 force push，不设置自定义 git author（不 `git config user.*`、不 `--author`、不 `git am`），用默认身份。
+- **提交方式**：图床照片直接提交 `master`。地图仓库只改数据（`spots.json`、`src/data/works.json`、文档）时直接提交 `main`，不开 PR；涉及代码（脚本、UI）才开 PR，每个新 PR 用一个新的、标题写清任务的云端代理，等用户说合并再合并。不 force push，不设置自定义 git author（不 `git config user.*`、不 `--author`、不 `git am`），用默认身份。
 - **两个仓库分开提交**：一个云端代理只能推它启动时的那个仓库，图床和地图仓库各开一个代理。先图床、验证 jsDelivr 200，再推地图数据，否则线上会短暂裂图。
 - **用户本地仓库只读**：不改他本地仓库的 git 状态，不改他的照片图库。
 - 地图图钉的预览小图用实拍缩略图；动画截图只放浮窗；anitabi 截图直接引用 `image.anitabi.cn`（标来源、可跳转），不搬到图床。
 - 浮窗合并：只有同一 anitabi pointId 的照片合并成翻页；不同 pointId 即使同名同地也各自一个图钉。
-- 一部作品多季/多条目时，照片按条目分目录存放，但在图例里合并为一个作品（改 `src/lib/spots.ts` 的合并表，属于代码改动）。
+- 一部作品多季/多条目时，照片按条目分目录存放，但在图例里合并为一个作品（改 `src/data/works.json`，属于数据改动，直接推 `main`）。
 - 聊天里给用户看的图要小：总览图压到几百 KB 以内的 WebP/JPEG，不发视频。
 
 ## 步骤
@@ -47,5 +47,5 @@ description: >-
 6. **拍摄时间**：取 EXIF DateTimeOriginal 和时区偏移；手机时区和拍摄地不一致时（如安卓设为国内时间），换算成当地时间再写。
 7. **请用户确认**：发匹配表（对比图、pointId、地点、条目/集数、裁剪/旋转、输出尺寸、置信度）、压缩过的总览图，列出不确定项（自译地名、替补图、弱匹配）。确认后再提交。
 8. **提交图床**：把 tar.gz、sha256 列表和说明交给负责 blog-image 的提交者（如云端代理）：解包到 `tabi/<bangumiId>/`（含 `mid/`、`thumb/`、`anime/`），核对 sha256、只新增文件，直接推 `master`；curl 确认原图、中图、缩略图的 jsDelivr 地址都返回 200（偶发 403 单独重试或 purge）。
-9. **加地点数据**：基于最新 `main` 生成只改 `src/data/spots.json` 的普通 diff（字段以 `src/types/spot.ts` 为准：`source: "anitabi"`、`anitabiPointId`、照片 jsDelivr 地址、拍摄时间、截图来源），图床验证通过后由负责 tabi 的提交者 `git apply`（必要时 `--3way`）、跑 `vp check` 和 `pnpm build`，直接推 `main`。图例合并等代码改动另开 PR。
+9. **加地点数据**：基于最新 `main` 生成只改 `src/data/spots.json` 的普通 diff（字段以 `src/types/spot.ts` 为准：`source: "anitabi"`、`anitabiPointId`、照片 jsDelivr 地址、拍摄时间、截图来源），图床验证通过后由负责 tabi 的提交者 `git apply`（必要时 `--3way`）、跑 `vp check` 和 `pnpm build`，直接推 `main`。图例合并改 `src/data/works.json`，同样直接推 `main`。脚本、UI 等代码改动另开 PR。
 10. **收尾**：确认线上页面和图片可访问；删掉处理环境里带 GPS 的原图副本；归档完成的云端代理；向用户汇报提交号/PR 链接。

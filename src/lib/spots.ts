@@ -1,4 +1,5 @@
 import rawSpots from "../data/spots.json";
+import works from "../data/works.json";
 import type { Spot } from "../types/spot";
 
 export const spots = rawSpots as Spot[];
@@ -25,29 +26,28 @@ export interface AnimeGroup {
   spots: Spot[];
 }
 
+/** src/data/works.json 里的一条系列。bangumiIds 最早一季在前。 */
+interface MergedWork {
+  key: string;
+  name: string;
+  bangumiIds: readonly number[];
+}
+
 /**
  * 多个 bangumi 条目属于同一作品。图例、定位和显隐按 key 合并，显示名用 name。
  * 地点上的 bangumiId 不动，anitabi 链接仍指向各自的条目。
+ * 系列名单只改 src/data/works.json。
  */
-const WORK_BY_BANGUMI: Record<number, { key: string; name: string }> = {
-  290: { key: "fate-stay-night", name: "Fate/stay night 系列" },
-  935: { key: "fate-stay-night", name: "Fate/stay night 系列" },
-  95225: { key: "fate-stay-night", name: "Fate/stay night 系列" },
-  109386: { key: "fate-stay-night", name: "Fate/stay night 系列" },
-  109375: { key: "fate-stay-night", name: "Fate/stay night 系列" },
-  175600: { key: "fate-stay-night", name: "Fate/stay night 系列" },
-  474906: { key: "shoushimin", name: "小市民系列" },
-  513018: { key: "shoushimin", name: "小市民系列" },
-  485: { key: "haruhi", name: "凉宫春日系列" },
-  1606: { key: "haruhi", name: "凉宫春日系列" },
-  3375: { key: "haruhi", name: "凉宫春日系列" },
-  394260: { key: "bokuyaba", name: "我心里危险的东西" },
-  441795: { key: "bokuyaba", name: "我心里危险的东西" },
-  115908: { key: "euphonium", name: "吹响吧！上低音号系列" },
-  152091: { key: "euphonium", name: "吹响吧！上低音号系列" },
-  283643: { key: "euphonium", name: "吹响吧！上低音号系列" },
-  216372: { key: "euphonium", name: "吹响吧！上低音号系列" },
-};
+function workByBangumi(list: readonly MergedWork[]): Record<number, { key: string; name: string }> {
+  const byId: Record<number, { key: string; name: string }> = {};
+  for (const work of list) {
+    const entry = { key: work.key, name: work.name };
+    for (const id of work.bangumiIds) byId[id] = entry;
+  }
+  return byId;
+}
+
+const WORK_BY_BANGUMI = workByBangumi(works);
 
 function workOf(spot: Spot): { key: string; name: string } {
   const listed = spot.bangumiId != null ? WORK_BY_BANGUMI[spot.bangumiId] : undefined;
